@@ -1,0 +1,16 @@
+# Dépendances du jeu Loup-Garou
+
+# Tests
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# Configuration
+python-dotenv>=1.0.0
+
+# Validation de données
+pydantic>=2.5.0
+
+# Intégration Matrix
+matrix-nio>=0.24.0
+aiohttp>=3.9.0
