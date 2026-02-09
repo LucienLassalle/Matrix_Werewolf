@@ -27,14 +27,36 @@ class Dictateur(Role):
     
     def perform_action(self, game: 'GameManager', action_type: ActionType, target=None, **kwargs) -> dict:
         if action_type == ActionType.DICTATOR_KILL:
+            if self.has_used_power:
+                return {"success": False, "message": "Vous avez déjà utilisé votre pouvoir"}
+            
             if not target or not target.is_alive:
                 return {"success": False, "message": "Cible invalide"}
             
+            if target == self.player:
+                return {"success": False, "message": "Vous ne pouvez pas vous cibler vous-même"}
+            
+            # Le Dictateur ne peut agir que durant le jour
+            from models.enums import GamePhase
+            if game.phase not in (GamePhase.DAY, GamePhase.VOTE):
+                return {"success": False, "message": "Le Dictateur ne peut agir que durant le jour"}
+            
             self.has_used_power = True
+            
+            # Le coup d'état annule le vote en cours
+            if game.phase == GamePhase.VOTE:
+                game.vote_manager.clear_votes()
+                game.phase = GamePhase.DAY
             
             if target.get_team() == Team.MECHANT:
                 # Le dictateur tue un loup, il devient maire
                 dead = game.kill_player(target, killed_during_day=True)
+                # Retirer le titre de maire à l'ancien maire (s'il existe)
+                for p in game.players.values():
+                    if p.is_mayor and p != self.player:
+                        p.is_mayor = False
+                # Annuler toute succession en cours (la cible était peut-être maire)
+                game._pending_mayor_succession = None
                 self.player.is_mayor = True
                 return {
                     "success": True,

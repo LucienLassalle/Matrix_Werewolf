@@ -191,8 +191,8 @@ class TestGameManagerAPI:
     
     def test_start_game_with_player_ids(self):
         gm = GameManager()
-        gm.start_game(player_ids=["user_1", "user_2", "user_3", "user_4"])
-        assert len(gm.players) == 4
+        gm.start_game(player_ids=["user_1", "user_2", "user_3", "user_4", "user_5"])
+        assert len(gm.players) == 5
         assert gm.phase == GamePhase.NIGHT
     
     def test_resolve_night_returns_uids(self):

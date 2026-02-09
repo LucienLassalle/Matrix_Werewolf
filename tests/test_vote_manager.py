@@ -242,5 +242,66 @@ class TestVoteEdgeCases:
         assert len(vm.wolf_votes) == 0
 
 
+class TestDeadVoterFiltering:
+    """Les votes des joueurs morts sont ignorés dans le comptage."""
+
+    def _make_game(self, *specs):
+        from game.game_manager import GameManager
+        from models.enums import RoleType, GamePhase
+        from roles import RoleFactory
+
+        game = GameManager()
+        for pseudo, uid, rt in specs:
+            game.add_player(pseudo, uid)
+            role = RoleFactory.create_role(rt)
+            role.assign_to_player(game.players[uid])
+        return game
+
+    def test_dead_voter_ignored(self):
+        from models.enums import RoleType, GamePhase
+
+        game = self._make_game(
+            ("Alice", "a1", RoleType.VILLAGEOIS),
+            ("Bob", "b1", RoleType.VILLAGEOIS),
+            ("Eve", "e1", RoleType.VILLAGEOIS),
+            ("Loup", "w1", RoleType.LOUP_GAROU),
+            ("Zoe", "z1", RoleType.VILLAGEOIS),
+        )
+        game.phase = GamePhase.VOTE
+
+        game.vote_manager.cast_vote(game.players["a1"], game.players["e1"])
+        game.vote_manager.cast_vote(game.players["b1"], game.players["z1"])
+
+        game.players["a1"].kill()
+
+        counts = game.vote_manager.count_votes()
+        assert counts.get("e1", 0) == 0
+        assert counts.get("z1", 0) == 1
+
+    def test_dead_wolf_vote_ignored(self):
+        """Les votes des loups morts ne comptent pas."""
+        from models.enums import RoleType, GamePhase
+
+        game = self._make_game(
+            ("Loup1", "w1", RoleType.LOUP_GAROU),
+            ("Loup2", "w2", RoleType.LOUP_GAROU),
+            ("Alice", "a1", RoleType.VILLAGEOIS),
+            ("Bob", "b1", RoleType.VILLAGEOIS),
+            ("Eve", "e1", RoleType.VILLAGEOIS),
+        )
+        game.phase = GamePhase.NIGHT
+
+        game.vote_manager.add_wolf_vote(game.players["w1"], game.players["a1"])
+        game.vote_manager.add_wolf_vote(game.players["w2"], game.players["b1"])
+
+        # Loup1 meurt (ex: Chasseur tire)
+        game.players["w1"].kill()
+
+        counts = game.vote_manager.count_wolf_votes()
+        # Le vote de w1 ne doit plus compter
+        assert counts.get("a1", 0) == 0
+        assert counts.get("b1", 0) == 1
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

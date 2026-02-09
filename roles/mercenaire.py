@@ -43,12 +43,20 @@ class Mercenaire(Role):
         if self.days_elapsed > self.deadline and not self.has_won:
             if self.player and self.player.is_alive:
                 game.log(f"{self.player.pseudo} (Mercenaire) n'a pas accompli sa mission à temps !")
-                game.kill_player(self.player, killed_during_day=False)
+                # Mort différée : évite les cascades pendant la boucle on_day_start
+                if hasattr(game, '_pending_kills'):
+                    game._pending_kills.append(self.player)
+                else:
+                    game.kill_player(self.player, killed_during_day=False)
     
     def on_player_death(self, game: 'GameManager', dead_player, **kwargs):
-        """Vérifie si la cible du mercenaire a été éliminée par vote."""
-        killed_during_day = kwargs.get('killed_during_day', False)
-        if (killed_during_day and 
+        """Vérifie si la cible du mercenaire a été éliminée par le vote du village.
+        
+        Seule une élimination par vote du village compte (pas le Dictateur,
+        pas le Chasseur). Le flag 'voted_out' est posé par end_vote_phase().
+        """
+        voted_out = kwargs.get('voted_out', False)
+        if (voted_out and 
             self.player and 
             self.player.is_alive and
             self.player.target and 

@@ -108,6 +108,15 @@ class GameDatabase:
             )
         """)
         
+        # Table pour les inscriptions (persistance crash-safe)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS registrations (
+                user_id TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                registered_at TEXT NOT NULL
+            )
+        """)
+        
         self.conn.commit()
         logger.info(f"Base de données initialisée: {self.db_path}")
     
@@ -263,7 +272,7 @@ class GameDatabase:
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             game_id,
-            start_time.isoformat(),
+            start_time.isoformat() if start_time else datetime.now().isoformat(),
             end_time.isoformat(),
             winner_team.value,
             len(players),
@@ -407,3 +416,52 @@ class GameDatabase:
         if self.conn:
             self.conn.close()
             logger.info("Connexion à la base de données fermée")
+    
+    # ==================== Inscriptions (crash-safe) ====================
+    
+    def save_registration(self, user_id: str, display_name: str):
+        """Sauvegarde une inscription joueur (persistante en cas de crash)."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO registrations (user_id, display_name, registered_at)
+            VALUES (?, ?, ?)
+        """, (user_id, display_name, datetime.now().isoformat()))
+        self.conn.commit()
+        logger.info(f"Inscription sauvegardée en BDD: {display_name} ({user_id})")
+    
+    def remove_registration(self, user_id: str):
+        """Supprime une inscription joueur."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM registrations WHERE user_id = ?", (user_id,))
+        self.conn.commit()
+        logger.info(f"Inscription supprimée: {user_id}")
+    
+    def load_registrations(self) -> Dict[str, str]:
+        """Charge toutes les inscriptions depuis la BDD.
+        
+        Returns:
+            Dict[user_id, display_name]
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT user_id, display_name FROM registrations")
+        rows = cursor.fetchall()
+        registrations = {row['user_id']: row['display_name'] for row in rows}
+        if registrations:
+            logger.info(f"{len(registrations)} inscription(s) restaurée(s) depuis la BDD")
+        return registrations
+    
+    def clear_registrations(self):
+        """Efface toutes les inscriptions (après démarrage de partie ou annulation)."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM registrations")
+        self.conn.commit()
+        logger.info("Inscriptions effacées de la BDD")
+    
+    def has_active_game(self) -> bool:
+        """Vérifie si une partie était en cours (pour détection de crash)."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT phase FROM game_state WHERE id = 1")
+        row = cursor.fetchone()
+        if not row:
+            return False
+        return row['phase'] not in ('SETUP', 'ENDED')

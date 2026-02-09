@@ -63,8 +63,9 @@ class TestMessageDistortion(unittest.TestCase):
         word = "le"
         illegible = self.distorter._make_illegible(word)
         
-        # Doit contenir des caractères spéciaux
-        self.assertTrue(any(c in illegible for c in ['*', '~', '?']))
+        # Doit contenir des caractères spéciaux (parmi tous les illegible_chars possibles)
+        illegible_chars = {'*', '#', '~', '?', '·'}
+        self.assertTrue(any(c in illegible_chars for c in illegible))
     
     def test_char_replacements(self):
         """Vérifie que les remplacements de caractères sont corrects."""

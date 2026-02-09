@@ -156,5 +156,58 @@ class TestGameDatabase:
             pytest.skip(f"save_game_result non compatible: {e}")
 
 
+# ═══════════════════════════════════════════════════════════
+#  save_game_result — robustesse start_time=None (audit)
+# ═══════════════════════════════════════════════════════════
+
+class TestSaveGameResultNullSafety:
+    """save_game_result() ne doit pas crasher si start_time est None."""
+
+    def test_save_with_none_start_time(self, tmp_path):
+        from datetime import datetime
+        db_path = str(tmp_path / "test.db")
+        db = GameDatabase(db_path)
+
+        players = {}
+        for i, rt in enumerate([RoleType.LOUP_GAROU, RoleType.VILLAGEOIS,
+                                 RoleType.VILLAGEOIS, RoleType.VILLAGEOIS]):
+            p = Player(f"P{i}", f"u{i}")
+            role = RoleFactory.create_role(rt)
+            role.assign_to_player(p)
+            players[p.user_id] = p
+
+        db.save_game_result(
+            game_id="test-none",
+            start_time=None,
+            end_time=datetime.now(),
+            winner_team=Team.GENTIL,
+            players=players,
+            total_days=3,
+        )
+
+    def test_save_with_valid_start_time(self, tmp_path):
+        from datetime import datetime
+        db_path = str(tmp_path / "test.db")
+        db = GameDatabase(db_path)
+
+        players = {}
+        for i, rt in enumerate([RoleType.LOUP_GAROU, RoleType.VILLAGEOIS,
+                                 RoleType.VILLAGEOIS, RoleType.VILLAGEOIS]):
+            p = Player(f"P{i}", f"u{i}")
+            role = RoleFactory.create_role(rt)
+            role.assign_to_player(p)
+            players[p.user_id] = p
+
+        db.save_game_result(
+            game_id="test-valid",
+            start_time=datetime(2025, 1, 1, 12, 0, 0),
+            end_time=datetime.now(),
+            winner_team=Team.MECHANT,
+            players=players,
+            total_days=5,
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+

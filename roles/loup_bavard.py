@@ -58,8 +58,11 @@ class LoupBavard(Role):
         if self.word_to_say and not self.has_said_word:
             if self.player and self.player.is_alive:
                 game.log(f"{self.player.pseudo} n'a pas dit le mot imposé et meurt !")
-                # Tuer via le game manager (mute, retrait loups, notifications, amoureux)
-                game.kill_player(self.player, killed_during_day=False)
+                # Mort différée : évite les cascades pendant la boucle on_night_start
+                if hasattr(game, '_pending_kills'):
+                    game._pending_kills.append(self.player)
+                else:
+                    game.kill_player(self.player, killed_during_day=False)
         
         # Assigner un nouveau mot pour la prochaine journée
         self.word_to_say = random.choice(_WORD_LIST)

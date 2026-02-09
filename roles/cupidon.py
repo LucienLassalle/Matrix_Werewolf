@@ -31,6 +31,9 @@ class Cupidon(Role):
     
     def perform_action(self, game: 'GameManager', action_type: ActionType, target=None, **kwargs) -> dict:
         if action_type == ActionType.MARRY:
+            if self.has_used_power:
+                return {"success": False, "message": "Vous avez déjà utilisé votre pouvoir"}
+            
             target1 = kwargs.get('target1')
             target2 = kwargs.get('target2')
             

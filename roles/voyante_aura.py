@@ -33,10 +33,16 @@ class VoyanteAura(Role):
                 return {"success": False, "message": "Cible invalide"}
             
             self.has_used_power_tonight = True
-            aura = target.get_team().value
+            team = target.get_team()
+            aura_names = {
+                Team.GENTIL: "Gentil 🏘️",
+                Team.MECHANT: "Méchant 🐺",
+                Team.NEUTRE: "Neutre ❓",
+            }
+            aura = aura_names.get(team, team.value)
             return {
                 "success": True,
-                "message": f"{target.pseudo} est {aura}",
+                "message": f"{target.pseudo} est **{aura}**",
                 "aura": aura
             }
         

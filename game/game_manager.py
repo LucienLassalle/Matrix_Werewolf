@@ -42,6 +42,32 @@ class GameManager:
         # Gestion des permissions Matrix
         self.on_remove_wolf_from_room: Optional[callable] = None
         self.on_mute_player: Optional[callable] = None
+        
+        # Succession de maire
+        self._pending_mayor_succession: Optional[Player] = None
+        
+        # Configuration Cupidon
+        self.cupidon_wins_with_couple = True
+    
+    def reset(self):
+        """Réinitialise le GameManager pour une nouvelle partie.
+        
+        Conserve la connexion BDD, les callbacks et la configuration.
+        """
+        self.players.clear()
+        self._player_order.clear()
+        self.phase = GamePhase.SETUP
+        self.day_count = 0
+        self.night_count = 0
+        self.vote_manager = VoteManager()
+        self.action_manager = ActionManager()
+        self.available_roles.clear()
+        self.extra_roles.clear()
+        self.game_log.clear()
+        self.game_id = str(uuid.uuid4())
+        self.start_time = None
+        self._pending_mayor_succession = None
+        logger.info("GameManager réinitialisé pour une nouvelle partie")
     
     # ==================== Gestion des joueurs ====================
     
@@ -117,7 +143,11 @@ class GameManager:
         return [p for p in self.get_living_players() if p.get_team() == Team.MECHANT]
     
     def get_neighbors(self, player: Player) -> List[Player]:
-        """Retourne les voisins d'un joueur (pour le montreur d'ours)."""
+        """Retourne les voisins vivants d'un joueur (pour le montreur d'ours).
+        
+        Les joueurs morts sont ignorés : on cherche le prochain joueur
+        vivant dans chaque direction (comme si les morts étaient retirés du cercle).
+        """
         if player.user_id not in self._player_order:
             return []
         
@@ -125,15 +155,21 @@ class GameManager:
         n = len(self._player_order)
         neighbors = []
         
-        # Voisin de gauche
-        left_uid = self._player_order[(index - 1) % n]
-        if left_uid in self.players:
-            neighbors.append(self.players[left_uid])
+        # Voisin de gauche (sauter les morts)
+        for offset in range(1, n):
+            left_uid = self._player_order[(index - offset) % n]
+            left_player = self.players.get(left_uid)
+            if left_player and left_player.is_alive and left_player != player:
+                neighbors.append(left_player)
+                break
         
-        # Voisin de droite
-        right_uid = self._player_order[(index + 1) % n]
-        if right_uid in self.players:
-            neighbors.append(self.players[right_uid])
+        # Voisin de droite (sauter les morts)
+        for offset in range(1, n):
+            right_uid = self._player_order[(index + offset) % n]
+            right_player = self.players.get(right_uid)
+            if right_player and right_player.is_alive and right_player != player:
+                neighbors.append(right_player)
+                break
         
         return neighbors
     
@@ -256,8 +292,8 @@ class GameManager:
                     pseudo = uid.split(':')[0].lstrip('@') if ':' in uid else uid
                     self.add_player(pseudo, uid)
         
-        if len(self.players) < 4:
-            return {"success": False, "message": "Il faut au moins 4 joueurs pour commencer"}
+        if len(self.players) < 5:
+            return {"success": False, "message": "Il faut au moins 5 joueurs pour commencer"}
         
         # Auto-configurer les rôles si non définis
         if not self.available_roles:
@@ -292,15 +328,21 @@ class GameManager:
             for p in self.players.values()
         )
         if has_voleur:
-            extra_pool = [RoleType.VILLAGEOIS, RoleType.CHASSEUR, RoleType.VOYANTE,
-                          RoleType.GARDE, RoleType.SORCIERE, RoleType.CORBEAU]
+            # Rôles éligibles pour le tirage du Voleur (pas de rôles uniques/complexes)
+            excluded_from_pool = {
+                RoleType.VOLEUR,      # Pas de Voleur dans le tirage
+                RoleType.CUPIDON,     # Pouvoir expiré après nuit 1
+                RoleType.MERCENAIRE,  # Mission impossible à rattraper
+                RoleType.DICTATEUR,   # Rôle trop impactant
+            }
+            extra_pool = [rt for rt in RoleType if rt not in excluded_from_pool]
             extras = random.sample(extra_pool, min(2, len(extra_pool)))
             for rt in extras:
                 self.extra_roles.append(RoleFactory.create_role(rt))
         
         self.log("La partie commence !")
         self.phase = GamePhase.NIGHT
-        self.day_count = 1
+        self.day_count = 0
         self.night_count = 1
         self.start_time = datetime.now()
         self._start_night()
@@ -325,10 +367,19 @@ class GameManager:
             player.votes_against = 0  # Reset Corbeau votes (vote phase is over)
             player.reset_daily_data()
         
+        # Liste des morts différées (ex: Loup Bavard n'ayant pas dit son mot)
+        self._pending_kills = []
+        
         # Appeler les callbacks de début de nuit
         for player in self.players.values():
             if player.role and player.is_alive:
                 player.role.on_night_start(self)
+        
+        # Traiter les morts différées après tous les callbacks
+        for pending_player in self._pending_kills:
+            if pending_player.is_alive:
+                self.kill_player(pending_player, killed_during_day=False)
+        self._pending_kills = []
         
         # Sauvegarder l'état
         self.save_state()
@@ -340,6 +391,12 @@ class GameManager:
         
         # Auto-résoudre le Voleur si nécessaire
         self._auto_resolve_voleur()
+        
+        # Auto-résoudre l'Enfant Sauvage si nécessaire (première nuit)
+        self._auto_resolve_enfant_sauvage()
+        
+        # Auto-résoudre le Cupidon si nécessaire (première nuit uniquement)
+        self._auto_resolve_cupidon()
         
         # Exécuter les actions de la nuit
         results = self.action_manager.execute_night_actions(self)
@@ -360,6 +417,16 @@ class GameManager:
                 for player in self.players.values():
                     if player.role:
                         player.role.on_player_death(self, dead, killed_during_day=False)
+            
+            # Détecter la mort du maire → succession nécessaire
+            # (les morts de nuit passent par execute_night_actions / player.kill()
+            #  et non par kill_player(), donc la succession n'est pas gérée là-bas)
+            for dead in results["deaths"]:
+                if dead.is_mayor:
+                    dead.is_mayor = False
+                    self._pending_mayor_succession = dead
+                    self.log(f"Le maire {dead.pseudo} est mort ! Succession nécessaire.")
+                    break
         else:
             self.log("Personne n'est mort cette nuit")
         
@@ -372,6 +439,13 @@ class GameManager:
         # Passer au jour
         self.day_count += 1
         self._start_day()
+        
+        # Revérifier après les morts de début de jour (ex: Mercenaire
+        # deadline dépassée, mort d'un amoureux en cascade, etc.)
+        winner = self.check_win_condition()
+        if winner:
+            self.phase = GamePhase.ENDED
+            return {"success": True, "winner": winner, "results": results}
         
         return {"success": True, "results": results}
     
@@ -419,10 +493,19 @@ class GameManager:
         # Vérifier si le chasseur peut tirer
         self.check_hunter_shot()
         
+        # Liste des morts différées (ex: Mercenaire deadline dépassée)
+        self._pending_kills = []
+        
         # Appeler les callbacks de début de jour
         for player in self.players.values():
             if player.role and player.is_alive:
                 player.role.on_day_start(self)
+        
+        # Traiter les morts différées après tous les callbacks
+        for pending_player in self._pending_kills:
+            if pending_player.is_alive:
+                self.kill_player(pending_player, killed_during_day=False)
+        self._pending_kills = []
         
         # Vérifier le montreur d'ours
         for player in self.players.values():
@@ -469,7 +552,7 @@ class GameManager:
             
             if most_voted:
                 self.log(f"{most_voted.pseudo} a été éliminé par vote")
-                all_deaths = self.kill_player(most_voted, killed_during_day=True)
+                all_deaths = self.kill_player(most_voted, killed_during_day=True, voted_out=True)
         
         # Vérifier les conditions de victoire
         winner = self.check_win_condition()
@@ -480,6 +563,13 @@ class GameManager:
         # Passer à la nuit suivante
         self.night_count += 1
         self._start_night()
+        
+        # Revérifier après les morts de début de nuit (ex: Loup Bavard
+        # n'ayant pas dit son mot, mort d'un amoureux en cascade, etc.)
+        winner = self.check_win_condition()
+        if winner:
+            self.phase = GamePhase.ENDED
+            return {"success": True, "winner": winner, "eliminated": most_voted, "all_deaths": all_deaths}
         
         return {"success": True, "eliminated": most_voted, "all_deaths": all_deaths}
     
@@ -508,12 +598,25 @@ class GameManager:
         
         wolves = [p for p in living_players if p.get_team() == Team.MECHANT]
         non_wolves = [p for p in living_players if p.get_team() != Team.MECHANT]
+        # Pour la victoire des loups, seuls les GENTILS bloquent.
+        # Les NEUTRE (Mercenaire non accompli) ne bloquent pas.
+        gentils = [p for p in living_players if p.get_team() == Team.GENTIL]
         
         # 1. Couple gagne (les 2 derniers vivants sont amoureux)
         if len(living_players) == 2:
             lovers = [p for p in living_players if p.lover and p.lover.is_alive]
             if len(lovers) == 2:
                 return Team.COUPLE
+        
+        # 1b. Couple + Cupidon gagnent (si option activée)
+        # 3 vivants = 2 amoureux + Cupidon (pas dans le couple)
+        if self.cupidon_wins_with_couple and len(living_players) == 3:
+            lovers = [p for p in living_players if p.lover and p.lover.is_alive]
+            if len(lovers) == 2:
+                non_lovers = [p for p in living_players if p not in lovers]
+                if (len(non_lovers) == 1 and non_lovers[0].role
+                        and non_lovers[0].role.role_type == RoleType.CUPIDON):
+                    return Team.COUPLE
         
         # 2. Loup Blanc seul survivant
         if len(living_players) == 1:
@@ -525,9 +628,10 @@ class GameManager:
         if not wolves:
             return Team.GENTIL
         
-        # 4. Loups gagnent (il ne reste QUE des loups)
+        # 4. Loups gagnent (plus aucun GENTIL vivant)
+        # Les NEUTRE (Mercenaire non accompli) ne bloquent pas la victoire
         # Le Loup Blanc seul ne déclenche PAS la victoire des loups
-        if not non_wolves:
+        if not gentils:
             regular_wolves = [
                 p for p in wolves
                 if not p.role or p.role.role_type != RoleType.LOUP_BLANC
@@ -548,6 +652,45 @@ class GameManager:
             if p.role and p.role.role_type == RoleType.CUPIDON:
                 return p
         return None
+    
+    def get_mayor(self) -> Optional[Player]:
+        """Retourne le joueur maire vivant, ou None."""
+        for p in self.players.values():
+            if p.is_mayor and p.is_alive:
+                return p
+        return None
+    
+    def designate_mayor(self, target: Player) -> dict:
+        """Désigne un nouveau maire (succession)."""
+        if not self._pending_mayor_succession:
+            return {"success": False, "message": "Aucune succession de maire en cours"}
+        
+        if not target.is_alive:
+            return {"success": False, "message": "Le successeur doit être vivant"}
+        
+        old_mayor = self._pending_mayor_succession
+        target.is_mayor = True
+        self._pending_mayor_succession = None
+        self.log(f"{target.pseudo} est le nouveau maire (désigné par {old_mayor.pseudo})")
+        
+        return {"success": True, "message": f"{target.pseudo} est le nouveau maire", "new_mayor": target}
+    
+    def auto_designate_mayor(self) -> Optional[Player]:
+        """Désigne automatiquement un maire aléatoire parmi les vivants."""
+        if not self._pending_mayor_succession:
+            return None
+        
+        living = self.get_living_players()
+        if not living:
+            self._pending_mayor_succession = None
+            return None
+        
+        new_mayor = random.choice(living)
+        new_mayor.is_mayor = True
+        self._pending_mayor_succession = None
+        self.log(f"{new_mayor.pseudo} est désigné maire par défaut")
+        
+        return new_mayor
     
     def has_evil_role(self) -> bool:
         """Vérifie qu'il y a au moins un rôle méchant dans la partie."""
@@ -575,6 +718,45 @@ class GameManager:
                     # N'a rien fait → reste Voleur (comme un Villageois)
                     voleur_role.has_used_power = True
                     self.log(f"{player.pseudo} reste Voleur (sans pouvoir)")
+    
+    # ==================== Cupidon ====================
+    
+    def _auto_resolve_cupidon(self):
+        """Consomme le pouvoir du Cupidon à la fin de la première nuit.
+        
+        Le Cupidon ne peut marier un couple que durant la première nuit.
+        S'il n'a pas agi, son pouvoir est perdu.
+        """
+        for player in list(self.players.values()):
+            if (player.role and
+                player.role.role_type == RoleType.CUPIDON and
+                player.is_alive and
+                not player.role.has_used_power):
+                player.role.has_used_power = True
+                self.log(f"{player.pseudo} (Cupidon) n'a pas marié de couple — "
+                        f"pouvoir perdu.")
+    
+    # ==================== Enfant Sauvage ====================
+    
+    def _auto_resolve_enfant_sauvage(self):
+        """Auto-résout l'Enfant Sauvage en fin de première nuit.
+        
+        Si l'Enfant Sauvage n'a pas choisi de mentor, un mentor est
+        assigné aléatoirement parmi les joueurs vivants.
+        """
+        for player in list(self.players.values()):
+            if (player.role and
+                player.role.role_type == RoleType.ENFANT_SAUVAGE and
+                player.is_alive and
+                not player.role.has_chosen_mentor):
+                # Choisir un mentor aléatoire parmi les vivants (pas soi-même)
+                candidates = [p for p in self.get_living_players() if p != player]
+                if candidates:
+                    mentor = random.choice(candidates)
+                    player.mentor = mentor
+                    player.role.has_chosen_mentor = True
+                    self.log(f"{player.pseudo} (Enfant Sauvage) n'a pas choisi — "
+                            f"mentor auto-assigné : {mentor.pseudo}")
     
     # ==================== Résumé des rôles ====================
     
@@ -673,7 +855,7 @@ class GameManager:
         # Sauvegarder l'état
         self.save_state()
     
-    def kill_player(self, player: Player, killed_during_day: bool = False) -> List[Player]:
+    def kill_player(self, player: Player, killed_during_day: bool = False, voted_out: bool = False) -> List[Player]:
         """Tue un joueur avec gestion complète de la chaîne de mort.
         
         Gère : kill → mute → retrait salon loups → notifications rôles.
@@ -682,6 +864,7 @@ class GameManager:
         Args:
             player: Le joueur à tuer.
             killed_during_day: True si tué par vote/exécution de jour.
+            voted_out: True si éliminé spécifiquement par le vote du village.
         
         Returns:
             Liste de tous les joueurs morts (incluant l'amoureux).
@@ -710,7 +893,15 @@ class GameManager:
         for dead in dead_players:
             for p in self.players.values():
                 if p.role:
-                    p.role.on_player_death(self, dead, killed_during_day=killed_during_day)
+                    p.role.on_player_death(self, dead, killed_during_day=killed_during_day, voted_out=voted_out)
+        
+        # Détecter la mort du maire → succession nécessaire
+        for dead in dead_players:
+            if dead.is_mayor:
+                dead.is_mayor = False
+                self._pending_mayor_succession = dead
+                self.log(f"Le maire {dead.pseudo} est mort ! Succession nécessaire.")
+                break
         
         return dead_players
     
@@ -733,21 +924,18 @@ class GameManager:
                 logger.error(f"Erreur lors du mute: {e}")
     
     def check_hunter_shot(self):
-        """Vérifie si le chasseur peut tirer et active sa permission."""
+        """Vérifie si le chasseur peut tirer et active sa permission.
+        
+        Le Chasseur peut tirer immédiatement dans la phase où il est éliminé
+        ainsi que dans la phase suivante s'il n'a pas encore tiré.
+        """
         for player in self.players.values():
             if (player.role and 
                 player.role.role_type == RoleType.CHASSEUR and 
                 not player.is_alive and 
                 not player.role.has_shot):
-                
-                # Tué le jour → tire la nuit (phase actuelle = NIGHT)
-                # Tué la nuit → tire le jour (phase actuelle = DAY)
-                if player.role.killed_during_day and self.phase == GamePhase.NIGHT:
-                    player.role.can_shoot_now = True
-                    logger.info(f"Chasseur {player.pseudo} peut tirer (tué le jour)")
-                elif not player.role.killed_during_day and self.phase == GamePhase.DAY:
-                    player.role.can_shoot_now = True
-                    logger.info(f"Chasseur {player.pseudo} peut tirer (tué la nuit)")
+                player.role.can_shoot_now = True
+                logger.info(f"Chasseur {player.pseudo} peut tirer")
     
     def end_game(self, winner: Team):
         """Termine la partie et sauvegarde les statistiques."""

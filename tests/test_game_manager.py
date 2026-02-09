@@ -33,7 +33,7 @@ class TestGameManagerBasics:
         
         assert gm.phase == GamePhase.NIGHT
         assert len(gm.players) == 8
-        assert gm.day_count == 1
+        assert gm.day_count == 0
         
         for player in gm.players.values():
             assert player.role is not None
@@ -71,7 +71,7 @@ class TestGamePhases:
         gm.start_game(player_ids)
         
         assert gm.phase == GamePhase.NIGHT
-        assert gm.day_count == 1
+        assert gm.day_count == 0
         
         gm.set_phase(GamePhase.DAY)
         assert gm.phase == GamePhase.DAY
@@ -354,7 +354,7 @@ class TestIntegration:
         gm.start_game(player_ids)
         
         assert gm.phase == GamePhase.NIGHT
-        assert gm.day_count == 1
+        assert gm.day_count == 0
         
         results = gm.resolve_night()
         
@@ -786,3 +786,313 @@ class TestGetCupidonPlayer:
         
         result = gm.get_cupidon_player()
         assert result is not None
+
+
+# ═══════════════════════════════════════════════════════════
+#  resolve_night : données wolf_target et converted
+# ═══════════════════════════════════════════════════════════
+
+def _make_game_night(*specs) -> GameManager:
+    """Crée une partie en phase NIGHT."""
+    from roles import RoleFactory
+    game = GameManager()
+    for pseudo, uid, rt in specs:
+        game.add_player(pseudo, uid)
+        role = RoleFactory.create_role(rt)
+        role.assign_to_player(game.players[uid])
+    game.phase = GamePhase.NIGHT
+    return game
+
+
+class TestResolveNight:
+    """Vérifie que resolve_night() retourne les bonnes données."""
+
+    def test_resolve_night_includes_wolf_target(self):
+        game = _make_game_night(
+            ("Loup", "w1", RoleType.LOUP_GAROU),
+            ("Villageois", "v1", RoleType.VILLAGEOIS),
+            ("V2", "v2", RoleType.VILLAGEOIS),
+        )
+        target = game.players["v1"]
+
+        game.vote_manager.register_player(game.players["w1"])
+        game.vote_manager.register_player(target)
+        game.vote_manager.add_wolf_vote(game.players["w1"], target)
+
+        results = game.resolve_night()
+
+        assert results["wolf_target"] == "v1"
+        assert "v1" in results["deaths"]
+
+    def test_resolve_night_includes_converted(self):
+        game = _make_game_night(
+            ("LoupNoir", "ln1", RoleType.LOUP_NOIR),
+            ("Loup", "w1", RoleType.LOUP_GAROU),
+            ("Villageois", "v1", RoleType.VILLAGEOIS),
+            ("V2", "v2", RoleType.VILLAGEOIS),
+        )
+        from models.enums import ActionType
+        ln = game.players["ln1"]
+        target = game.players["v1"]
+
+        ln.role.perform_action(game, ActionType.CONVERT)
+
+        game.vote_manager.register_player(ln)
+        game.vote_manager.register_player(game.players["w1"])
+        game.vote_manager.register_player(target)
+        game.vote_manager.add_wolf_vote(ln, target)
+        game.vote_manager.add_wolf_vote(game.players["w1"], target)
+
+        results = game.resolve_night()
+
+        assert results["converted"] == "v1"
+        assert "v1" not in results["deaths"]
+
+    def test_resolve_night_no_conversion(self):
+        game = _make_game_night(
+            ("Loup", "w1", RoleType.LOUP_GAROU),
+            ("Villageois", "v1", RoleType.VILLAGEOIS),
+            ("V2", "v2", RoleType.VILLAGEOIS),
+        )
+        target = game.players["v1"]
+
+        game.vote_manager.register_player(game.players["w1"])
+        game.vote_manager.register_player(target)
+        game.vote_manager.add_wolf_vote(game.players["w1"], target)
+
+        results = game.resolve_night()
+
+        assert results["converted"] is None
+        assert "v1" in results["deaths"]
+
+    def test_resolve_night_wrong_phase(self):
+        game = _make_game_night(
+            ("Loup", "w1", RoleType.LOUP_GAROU),
+            ("Villageois", "v1", RoleType.VILLAGEOIS),
+        )
+        game.phase = GamePhase.DAY
+
+        results = game.resolve_night()
+        assert results["deaths"] == []
+        assert results["wolf_target"] is None
+        assert results["converted"] is None
+
+
+# ═══════════════════════════════════════════════════════════
+#  get_player_by_pseudo : recherche étendue
+# ═══════════════════════════════════════════════════════════
+
+class TestGetPlayerByPseudo:
+    """Vérifie la recherche étendue de joueurs."""
+
+    def test_by_pseudo(self):
+        game = GameManager()
+        game.add_player("Alice", "user_1")
+        assert game.get_player_by_pseudo("Alice") is not None
+
+    def test_by_pseudo_case_insensitive(self):
+        game = GameManager()
+        game.add_player("Alice", "user_1")
+        assert game.get_player_by_pseudo("alice") is not None
+
+    def test_by_matrix_id(self):
+        game = GameManager()
+        game.add_player("Alice", "@alice:matrix.org")
+        p = game.get_player_by_pseudo("@alice:matrix.org")
+        assert p is not None
+        assert p.user_id == "@alice:matrix.org"
+
+    def test_by_partial_matrix_id(self):
+        game = GameManager()
+        game.add_player("Alice", "@alice:matrix.org")
+        p = game.get_player_by_pseudo("alice:matrix.org")
+        assert p is not None
+
+    def test_by_display_name(self):
+        game = GameManager()
+        game.add_player("Alice", "user_1")
+        game.players["user_1"].display_name = "Alice Wonderland"
+        p = game.get_player_by_pseudo("Alice Wonderland")
+        assert p is not None
+
+    def test_not_found(self):
+        game = GameManager()
+        game.add_player("Alice", "user_1")
+        assert game.get_player_by_pseudo("NotExist") is None
+
+
+# ═══════════════════════════════════════════════════════════
+#  Victoire des loups avec Mercenaire NEUTRE
+# ═══════════════════════════════════════════════════════════
+
+class TestMercenaireNeutreVictory:
+    """Un Mercenaire NEUTRE ne doit pas bloquer la victoire des loups."""
+
+    def test_neutre_mercenaire_does_not_block_wolf_victory(self):
+        """Si seuls des loups + un Mercenaire NEUTRE sont vivants, les loups gagnent."""
+        from roles import RoleFactory
+        game = _make_game_night(
+            ("Loup", "w1", RoleType.LOUP_GAROU),
+            ("Mercenaire", "m1", RoleType.MERCENAIRE),
+            ("Alice", "a1", RoleType.VILLAGEOIS),
+            ("Bob", "b1", RoleType.VILLAGEOIS),
+            ("Eve", "e1", RoleType.VILLAGEOIS),
+        )
+        # Tuer tous les villageois
+        game.players["a1"].kill()
+        game.players["b1"].kill()
+        game.players["e1"].kill()
+
+        # Le Mercenaire est encore NEUTRE (mission non accomplie)
+        assert game.players["m1"].get_team() == Team.NEUTRE
+
+        result = game.check_win_condition()
+        assert result == Team.MECHANT
+
+    def test_gentil_mercenaire_blocks_wolf_victory(self):
+        """Un Mercenaire devenu GENTIL bloque bien la victoire des loups."""
+        from roles import RoleFactory
+        game = _make_game_night(
+            ("Loup", "w1", RoleType.LOUP_GAROU),
+            ("Mercenaire", "m1", RoleType.MERCENAIRE),
+            ("Alice", "a1", RoleType.VILLAGEOIS),
+            ("Bob", "b1", RoleType.VILLAGEOIS),
+            ("Eve", "e1", RoleType.VILLAGEOIS),
+        )
+        # Le Mercenaire réussit sa mission → devient GENTIL
+        game.players["m1"].role.team = Team.GENTIL
+
+        # Tuer tous les villageois
+        game.players["a1"].kill()
+        game.players["b1"].kill()
+        game.players["e1"].kill()
+
+        result = game.check_win_condition()
+        assert result is None  # Pas de victoire, la partie continue
+
+
+class TestWinCheckAfterStartNight:
+    """Vérifie que end_vote_phase revérifie la victoire après _start_night.
+
+    Bug corrigé : si le Loup Bavard meurt au début de la nuit (mot non dit)
+    et qu'il était le dernier loup, la victoire du village n'était pas
+    détectée car check_win_condition n'était pas rappelé après _start_night.
+    """
+
+    def test_loup_bavard_last_wolf_dies_village_wins(self):
+        """Le Loup Bavard (dernier loup) meurt → le village gagne."""
+        from roles.loup_bavard import LoupBavard
+
+        game = GameManager()
+        for pseudo, uid in [("A", "a1"), ("B", "b1"), ("C", "c1"),
+                            ("D", "d1"), ("LB", "lb1")]:
+            game.add_player(pseudo, uid)
+
+        # Assigner les rôles manuellement
+        for uid in ["a1", "b1", "c1", "d1"]:
+            from roles.villageois import Villageois
+            role = Villageois()
+            role.assign_to_player(game.players[uid])
+        lb_role = LoupBavard()
+        lb_role.assign_to_player(game.players["lb1"])
+
+        # Simuler une partie en cours (VOTE) jour 1
+        game.phase = GamePhase.VOTE
+        game.day_count = 1
+        game.night_count = 1
+
+        # Le Loup Bavard a un mot mais ne l'a PAS dit
+        lb_role.word_to_say = "fromage"
+        lb_role.has_said_word = False
+
+        # Résoudre le vote (pas de votes → pas d'élimination)
+        result = game.end_vote_phase()
+
+        # Le Loup Bavard devait mourir dans _start_night (mot non dit)
+        assert not game.players["lb1"].is_alive
+
+        # Victoire du village détectée immédiatement (pas d'attente au matin)
+        assert result.get("winner") == Team.GENTIL
+        assert game.phase == GamePhase.ENDED
+
+    def test_loup_bavard_not_last_wolf_game_continues(self):
+        """Un Loup Bavard meurt mais il reste d'autres loups → pas de victoire."""
+        from roles.loup_bavard import LoupBavard
+
+        game = GameManager()
+        for pseudo, uid in [("A", "a1"), ("B", "b1"), ("C", "c1"),
+                            ("D", "d1"), ("LB", "lb1"), ("W", "w1")]:
+            game.add_player(pseudo, uid)
+
+        for uid in ["a1", "b1", "c1", "d1"]:
+            from roles.villageois import Villageois
+            role = Villageois()
+            role.assign_to_player(game.players[uid])
+        lb_role = LoupBavard()
+        lb_role.assign_to_player(game.players["lb1"])
+        wolf_role = LoupGarou()
+        wolf_role.assign_to_player(game.players["w1"])
+
+        game.phase = GamePhase.VOTE
+        game.day_count = 1
+        game.night_count = 1
+
+        lb_role.word_to_say = "fromage"
+        lb_role.has_said_word = False
+
+        result = game.end_vote_phase()
+
+        assert not game.players["lb1"].is_alive
+        assert result.get("winner") is None
+        assert game.phase == GamePhase.NIGHT
+
+
+class TestWinCheckAfterStartDay:
+    """Vérifie que end_night revérifie la victoire après _start_day.
+
+    Bug corrigé : si un joueur meurt au début du jour (ex: Mercenaire
+    deadline dépassée + amoureux cascade) et que cela déclenche une
+    condition de victoire, elle n'était pas détectée.
+    """
+
+    def test_mercenaire_deadline_plus_lover_cascade(self):
+        """Le Mercenaire meurt (deadline) + son amoureux (dernier loup) → village gagne."""
+        from roles.mercenaire import Mercenaire
+
+        game = GameManager()
+        for pseudo, uid in [("A", "a1"), ("B", "b1"), ("C", "c1"),
+                            ("Merc", "m1"), ("Wolf", "w1")]:
+            game.add_player(pseudo, uid)
+
+        for uid in ["a1", "b1", "c1"]:
+            from roles.villageois import Villageois
+            role = Villageois()
+            role.assign_to_player(game.players[uid])
+        merc_role = Mercenaire()
+        merc_role.assign_to_player(game.players["m1"])
+        wolf_role = LoupGarou()
+        wolf_role.assign_to_player(game.players["w1"])
+
+        # Faire du Mercenaire et du Loup un couple
+        game.players["m1"].lover = game.players["w1"]
+        game.players["w1"].lover = game.players["m1"]
+
+        # Le Mercenaire a raté sa deadline (2 jours déjà écoulés)
+        merc_role.deadline = 2
+        merc_role.days_elapsed = 2  # on_day_start va incrémenter à 3 > deadline
+        merc_role.has_won = False
+
+        # Simuler la nuit 2 (phase NIGHT, prête à être résolue)
+        game.phase = GamePhase.NIGHT
+        game.day_count = 2  # sera incrémenté à 3 par end_night
+        game.night_count = 2
+
+        result = game.end_night()
+
+        # Le Mercenaire meurt au début du jour 3 (deadline dépassée)
+        assert not game.players["m1"].is_alive
+        # L'amoureux (loup) meurt en cascade
+        assert not game.players["w1"].is_alive
+        # Victoire du village détectée immédiatement
+        assert result.get("winner") == Team.GENTIL
+        assert game.phase == GamePhase.ENDED

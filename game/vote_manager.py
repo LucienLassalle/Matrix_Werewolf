@@ -80,6 +80,8 @@ class VoteManager:
         counts: Dict[str, int] = {}
         for voter_uid, target_uid in self.votes.items():
             voter = self._player_cache.get(voter_uid)
+            if voter and not voter.is_alive:
+                continue  # Ignorer les votes des joueurs morts
             weight = 2 if voter and voter.is_mayor else 1
             counts[target_uid] = counts.get(target_uid, 0) + weight
         
@@ -93,11 +95,16 @@ class VoteManager:
     def count_wolf_votes(self) -> Dict[str, int]:
         """Compte les votes des loups.
         
+        Les votes des loups morts sont ignorés.
+        
         Returns:
             Dict[target_uid, nombre_de_votes]
         """
         counts: Dict[str, int] = {}
         for voter_uid, target_uid in self.wolf_votes.items():
+            voter = self._player_cache.get(voter_uid)
+            if voter and not voter.is_alive:
+                continue
             counts[target_uid] = counts.get(target_uid, 0) + 1
         return counts
     
@@ -114,6 +121,10 @@ class VoteManager:
     def get_most_voted(self, is_wolf_vote: bool = False) -> Optional[Player]:
         """Retourne le joueur le plus voté.
         
+        En cas d'égalité au vote du village, le Maire départage :
+        si le Maire a voté pour un des candidats à égalité, celui-ci
+        est éliminé.
+        
         Returns:
             Le Player le plus voté, ou None en cas d'égalité/aucun vote.
         """
@@ -125,11 +136,18 @@ class VoteManager:
         max_votes = max(counts.values())
         most_voted_uids = [uid for uid, c in counts.items() if c == max_votes]
         
-        # En cas d'égalité, retourne None
-        if len(most_voted_uids) > 1:
-            return None
+        if len(most_voted_uids) == 1:
+            return self._player_cache.get(most_voted_uids[0])
         
-        return self._player_cache.get(most_voted_uids[0])
+        # Égalité — le Maire départage (vote du village uniquement)
+        if not is_wolf_vote:
+            for player in self._player_cache.values():
+                if player.is_mayor and player.is_alive and player.user_id in self.votes:
+                    mayor_choice = self.votes[player.user_id]
+                    if mayor_choice in most_voted_uids:
+                        return self._player_cache.get(mayor_choice)
+        
+        return None
     
     # ==================== Réinitialisation ====================
     

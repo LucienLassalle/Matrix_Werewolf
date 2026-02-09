@@ -36,10 +36,10 @@ class Voyante(Role):
                 return {"success": False, "message": "Vous ne pouvez pas vous voir vous-même"}
             
             self.has_used_power_tonight = True
-            role_name = target.role.role_type.value if target.role else "Inconnu"
+            role_name = target.role.name if target.role else "Inconnu"
             return {
                 "success": True, 
-                "message": f"{target.pseudo} est {role_name}",
+                "message": f"{target.pseudo} est **{role_name}**",
                 "role": role_name
             }
         

@@ -46,6 +46,9 @@ class LoupBlanc(Role):
             if not target or not target.is_alive:
                 return {"success": False, "message": "Cible invalide"}
             
+            if target == self.player:
+                return {"success": False, "message": "Vous ne pouvez pas vous cibler vous-même"}
+            
             self.has_killed_tonight = True
             # NE PAS tuer ici - l'action_manager gère la mort à la résolution
             return {

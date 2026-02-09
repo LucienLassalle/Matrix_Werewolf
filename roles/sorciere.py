@@ -70,6 +70,9 @@ class Sorciere(Role):
             if not target or not target.is_alive:
                 return {"success": False, "message": "Cible invalide"}
             
+            if target == self.player:
+                return {"success": False, "message": "Vous ne pouvez pas vous empoisonner vous-même"}
+            
             self.has_death_potion = False
             self.has_poisoned_tonight = True
             # NE PAS tuer ici - l'action_manager gère la mort à la résolution

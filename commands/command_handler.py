@@ -30,6 +30,7 @@ class CommandHandler:
             "voleur-choisir": self.handle_thief_choose,
             "convertir": self.handle_convert,
             "dictateur": self.handle_dictator,
+            "maire": self.handle_maire,
         }
     
     def handle_command(self, user_id: str, command: str, target=None) -> dict:
@@ -39,7 +40,11 @@ class CommandHandler:
             return {"success": False, "message": "Joueur non trouvé"}
         
         if not player.is_alive:
-            if command != "tuer" or not player.role or player.role.role_type.value != "CHASSEUR":
+            is_chasseur_tuer = (command == "tuer" and player.role
+                                and player.role.role_type.value == "CHASSEUR")
+            is_maire_succession = (command == "maire"
+                                   and self.game._pending_mayor_succession == player)
+            if not is_chasseur_tuer and not is_maire_succession:
                 return {"success": False, "message": "Vous êtes mort"}
         
         handler = self.commands.get(command)
@@ -56,8 +61,12 @@ class CommandHandler:
             return {"success": False, "message": "Joueur non trouvé"}
         
         if not player.is_alive:
-            # Exception pour le chasseur qui peut tuer après sa mort
-            if command != "tuer" or not player.role or player.role.role_type.value != "CHASSEUR":
+            # Exceptions pour les joueurs morts
+            is_chasseur_tuer = (command == "tuer" and player.role
+                                and player.role.role_type.value == "CHASSEUR")
+            is_maire_succession = (command == "maire"
+                                   and self.game._pending_mayor_succession == player)
+            if not is_chasseur_tuer and not is_maire_succession:
                 return {"success": False, "message": "Vous êtes mort"}
         
         handler = self.commands.get(command)
@@ -141,7 +150,10 @@ class CommandHandler:
         return player.role.perform_action(self.game, ActionType.MARRY, None, target1=target1, target2=target2)
     
     def handle_witch_heal(self, player: Player, args: list) -> dict:
-        """Gère /sorciere-sauve {pseudo}."""
+        """Gère /sorciere-sauve {pseudo}.
+        
+        Règle originale : la Sorcière ne peut sauver QUE la victime des loups.
+        """
         if not args:
             return {"success": False, "message": "Usage : /sorciere-sauve {pseudo}"}
         
@@ -152,6 +164,13 @@ class CommandHandler:
         
         if not player.role or player.role.role_type.value != "SORCIERE":
             return {"success": False, "message": "Vous n'êtes pas la Sorcière"}
+        
+        # Vérifier que la cible est bien la victime des loups
+        wolf_target = self.game.vote_manager.get_most_voted(is_wolf_vote=True)
+        if not wolf_target:
+            return {"success": False, "message": "Les loups n'ont pas encore voté, vous ne pouvez pas utiliser votre potion de vie"}
+        if target != wolf_target:
+            return {"success": False, "message": f"Vous ne pouvez sauver que la victime des loups ({wolf_target.pseudo})"}
         
         result = player.role.perform_action(self.game, ActionType.HEAL, target)
         if result["success"]:
@@ -353,3 +372,20 @@ class CommandHandler:
             return {"success": False, "message": "Vous n'êtes pas le Dictateur"}
         
         return player.role.perform_action(self.game, ActionType.DICTATOR_KILL, target)
+    
+    def handle_maire(self, player: Player, args: list) -> dict:
+        """Gère /maire {pseudo} - Désigner un successeur en tant que maire mort."""
+        if not args:
+            return {"success": False, "message": "Usage : /maire {pseudo}"}
+        
+        if self.game._pending_mayor_succession != player:
+            return {"success": False, "message": "Vous n'êtes pas autorisé à désigner un maire"}
+        
+        target = self.game.get_player_by_pseudo(args[0])
+        if not target:
+            return {"success": False, "message": f"Joueur {args[0]} non trouvé"}
+        
+        if not target.is_alive:
+            return {"success": False, "message": "Vous devez désigner un joueur vivant"}
+        
+        return self.game.designate_mayor(target)

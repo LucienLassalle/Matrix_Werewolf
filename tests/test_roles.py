@@ -2,7 +2,7 @@
 
 import pytest
 from models.player import Player
-from models.enums import RoleType, ActionType, Team
+from models.enums import RoleType, ActionType, Team, GamePhase
 from roles import RoleFactory
 from game.game_manager import GameManager
 
@@ -46,7 +46,7 @@ class TestBasicRoles:
         
         result = role.perform_action(game, ActionType.SEE_ROLE, target)
         assert result["success"] == True
-        assert "LOUP_GAROU" in result["message"]
+        assert "Loup-Garou" in result["message"]
     
     def test_chasseur(self):
         """Test le rôle Chasseur."""
@@ -233,6 +233,8 @@ class TestSpecialRoles:
         loup_role = RoleFactory.create_role(RoleType.LOUP_GAROU)
         loup_role.assign_to_player(loup)
         
+        # Le Dictateur ne peut agir que le jour
+        game.phase = GamePhase.DAY
         result = role.perform_action(game, ActionType.DICTATOR_KILL, loup)
         assert result["success"] == True
         assert result["became_mayor"] == True

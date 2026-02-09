@@ -27,7 +27,7 @@ class TestGameManager:
         assert result["success"] == False
     
     def test_start_game_not_enough_players(self):
-        """Test qu'on ne peut pas démarrer avec moins de 4 joueurs."""
+        """Test qu'on ne peut pas démarrer avec moins de 5 joueurs."""
         self.game.add_player("Alice", "user_1")
         self.game.add_player("Bob", "user_2")
         result = self.game.start_game()

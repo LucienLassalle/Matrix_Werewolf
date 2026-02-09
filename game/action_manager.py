@@ -95,8 +95,8 @@ class ActionManager:
                     "target": wolf_target
                 })
             elif loup_noir_converts and wolf_target.get_team() == Team.MECHANT:
-                # Cible déjà méchante, la conversion n'a aucun effet mais
-                # pas de meurtre non plus (le Loup Noir a choisi de convertir)
+                # Cible déjà méchante, la conversion échoue → tuer normalement
+                self.night_deaths.append(wolf_target)
                 results["actions"].append({
                     "type": "convert",
                     "success": False,

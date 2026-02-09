@@ -116,7 +116,8 @@ class Voleur(Role):
                     "success": True,
                     "message": (f"Vous avez échangé votre rôle avec {target.pseudo}. "
                                f"Vous êtes maintenant **{target_role.name}** !"),
-                    "new_role": target_role
+                    "new_role": target_role,
+                    "swapped_target": target  # Pour notification de la cible
                 }
             
             else:

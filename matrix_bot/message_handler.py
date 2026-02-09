@@ -55,6 +55,7 @@ class MessageHandler:
         message = event.body.strip()
         sender = event.sender
         room_id = room.room_id
+        event_id = getattr(event, 'event_id', None)
         
         logger.info(f"📨 Message LIVE de {sender} dans {room.display_name}: {message[:80]!r}")
         
@@ -84,7 +85,7 @@ class MessageHandler:
                     except Exception as e:
                         logger.error(f"Erreur lors de l'inscription: {e}")
             else:
-                await self._handle_command(room_id, sender, message)
+                await self._handle_command(room_id, sender, message, event_id)
     
     async def _on_member_join(self, room: MatrixRoom, event: RoomMemberEvent):
         """Callback appelé quand un membre rejoint un salon."""
@@ -95,7 +96,7 @@ class MessageHandler:
                 return
             logger.info(f"{event.sender} a rejoint {room.display_name}")
     
-    async def _handle_command(self, room_id: str, sender: str, message: str):
+    async def _handle_command(self, room_id: str, sender: str, message: str, event_id: Optional[str] = None):
         """Parse et traite une commande."""
         parts = message.split()
         command = parts[0].lower()
@@ -109,30 +110,34 @@ class MessageHandler:
         # Appeler le callback si défini
         if self.on_command:
             try:
-                result = await self.on_command(room_id, sender, command_name, args)
+                result = await self.on_command(room_id, sender, command_name, args, event_id)
                 
-                # Confirmer avec un emoji
-                if result is not None and result.get('success'):
-                    await self._acknowledge_command(room_id, event_id=None)
+                # Confirmer avec un emoji 👍
+                if result is not None and result.get('success') and event_id:
+                    await self._acknowledge_command(room_id, event_id)
             except Exception as e:
                 logger.error(f"Erreur lors de l'exécution de {command}: {e}")
                 await self._send_error(room_id, str(e))
     
     async def _acknowledge_command(self, room_id: str, event_id: Optional[str] = None):
-        """Ajoute une réaction pour confirmer la commande."""
-        # TODO: Nécessite l'event_id du message
-        # await self.client.room_send(
-        #     room_id,
-        #     message_type="m.reaction",
-        #     content={
-        #         "m.relates_to": {
-        #             "rel_type": "m.annotation",
-        #             "event_id": event_id,
-        #             "key": "👍"
-        #         }
-        #     }
-        # )
-        pass
+        """Ajoute une réaction 👍 pour confirmer la commande."""
+        if not event_id:
+            return
+        
+        try:
+            await self.client.room_send(
+                room_id,
+                message_type="m.reaction",
+                content={
+                    "m.relates_to": {
+                        "rel_type": "m.annotation",
+                        "event_id": event_id,
+                        "key": "👍"
+                    }
+                }
+            )
+        except Exception as e:
+            logger.error(f"Erreur ajout réaction 👍: {e}")
     
     async def _send_error(self, room_id: str, error: str):
         """Envoie un message d'erreur."""

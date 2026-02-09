@@ -82,9 +82,11 @@ class WerewolfBot:
         # Configuration
         self.distort_little_girl_messages = os.getenv('LITTLE_GIRL_DISTORT_MESSAGES', 'true').lower() == 'true'
         self.mentaliste_advance_hours = float(os.getenv('MENTALISTE_ADVANCE_HOURS', '2'))
+        self._cupidon_wins_with_couple = os.getenv('CUPIDON_WINS_WITH_COUPLE', 'true').lower() == 'true'
         
         # Jeu
         self.game_manager = GameManager()
+        self.game_manager.cupidon_wins_with_couple = self._cupidon_wins_with_couple
         self.command_handler = CommandHandler(self.game_manager)
         self.leaderboard_manager = LeaderboardManager(self.game_manager.db)
         
@@ -101,6 +103,10 @@ class WerewolfBot:
         self._wolves_in_room: set = set()  # user_ids des loups dans le salon
         self._sorciere_notified = False  # Si la Sorcière a été notifiée du wolf target
         self._wolf_votes_locked = False  # True quand tous les loups ont voté (vote verrouillé)
+        self._mayor_succession_task: Optional[asyncio.Task] = None  # Timeout succession maire
+        self._vote_reminder_task: Optional[asyncio.Task] = None  # Rappels de vote
+        self._last_vote_snapshot: Dict[str, str] = {}  # Snapshot des votes pour détecter les changements
+        self._game_events: List[str] = []  # Historique des événements pour le récap de fin
         self.running = False
     
     async def start(self):
@@ -136,9 +142,30 @@ class WerewolfBot:
         
         self.notification_manager = NotificationManager(self.room_manager)
         
+        # Restaurer les inscriptions depuis la BDD (crash-safe)
+        saved_registrations = self.game_manager.db.load_registrations()
+        if saved_registrations:
+            self.registered_players.update(saved_registrations)
+            logger.info(f"♻️ {len(saved_registrations)} inscription(s) restaurée(s) depuis la BDD")
+        
+        # Détecter si une partie était en cours (crash mid-game)
+        if self.game_manager.db.has_active_game():
+            logger.warning(
+                "⚠️ Une partie était en cours avant le crash/redémarrage. "
+                "L'état mid-game ne peut pas être restauré. "
+                "Nettoyage de l'ancien état..."
+            )
+            self.game_manager.db.clear_current_game()
+            await self.client.send_message(
+                self.lobby_room_id,
+                "⚠️ **Le bot a redémarré** — la partie précédente n'a pas pu être "
+                "récupérée.\n\n"
+                "Tapez `/inscription` pour vous réinscrire à la prochaine partie.",
+                formatted=True
+            )
+        
         # Message de bienvenue dans le lobby (horaires dynamiques depuis .env)
-        await self.client.send_message(
-            self.lobby_room_id,
+        welcome_msg = (
             f"🐺 **Bot Loup-Garou démarré !**\n\n"
             f"Tapez `/inscription` pour participer à la prochaine partie.\n"
             f"La partie démarrera **Dimanche à midi**.\n\n"
@@ -147,7 +174,17 @@ class WerewolfBot:
             f"• Nuit: {self._night_hour}h → {self._day_hour}h\n"
             f"• Jour: {self._day_hour}h → {self._vote_hour}h\n"
             f"• Vote: {self._vote_hour}h → {self._night_hour}h\n"
-            f"• Durée max: {self._max_days} jours",
+            f"• Durée max: {self._max_days} jours"
+        )
+        if self.registered_players:
+            names = ", ".join(self.registered_players.values())
+            welcome_msg += (
+                f"\n\n♻️ **{len(self.registered_players)}** inscription(s) restaurée(s) : "
+                f"{names}"
+            )
+        await self.client.send_message(
+            self.lobby_room_id,
+            welcome_msg,
             formatted=True
         )
         
@@ -226,7 +263,13 @@ class WerewolfBot:
                     break
                 
                 # Démarrer une partie
-                await self._start_game()
+                game_started = await self._start_game()
+                
+                if not game_started:
+                    # Pas assez de joueurs ou erreur → nettoyer et recommencer
+                    self.registered_players.clear()
+                    self.game_manager.db.clear_registrations()
+                    continue
                 
                 # Lancer le scheduler
                 self.scheduler.start_game(datetime.now())
@@ -242,6 +285,9 @@ class WerewolfBot:
                 
                 # Nettoyer pour la prochaine
                 self.registered_players.clear()
+                self._game_events.clear()
+                self._wolves_in_room.clear()
+                self.game_manager.reset()
                 
         except Exception as e:
             logger.error(f"Erreur dans la boucle de jeu: {e}")
@@ -262,8 +308,12 @@ class WerewolfBot:
         
         await wait_task
     
-    async def _start_game(self):
-        """Démarre une nouvelle partie."""
+    async def _start_game(self) -> bool:
+        """Démarre une nouvelle partie.
+        
+        Returns:
+            True si la partie a bien démarré, False sinon.
+        """
         logger.info(f"Démarrage de la partie avec {len(self.registered_players)} joueurs")
         
         if len(self.registered_players) < 5:
@@ -273,7 +323,7 @@ class WerewolfBot:
                 "Partie annulée, réinscrivez-vous pour la semaine prochaine.",
                 formatted=True
             )
-            return
+            return False
         
         # Créer les joueurs
         player_ids = list(self.registered_players.keys())
@@ -286,7 +336,10 @@ class WerewolfBot:
                 f"❌ Impossible de lancer la partie : {result.get('message', 'erreur inconnue')}",
                 formatted=True
             )
-            return
+            return False
+        
+        # Réinitialiser les événements
+        self._game_events = []
         
         # Annoncer dans le lobby que la partie démarre
         await self.client.send_message(
@@ -298,6 +351,9 @@ class WerewolfBot:
         )
         # Bloquer les nouvelles inscriptions
         self._accepting_registrations = False
+        
+        # Vider les inscriptions de la BDD (elles sont désormais dans game_manager.players)
+        self.game_manager.db.clear_registrations()
         
         # Créer les salons de jeu
         await self.room_manager.create_all_rooms(player_ids)
@@ -315,18 +371,23 @@ class WerewolfBot:
         
         # Envoyer les rôles en DM
         await self._send_role_notifications()
+        
+        return True
     
     async def _create_special_rooms(self):
         """Crée les salons spéciaux (loups seulement au départ)."""
         # Salon des loups
         wolf_players = [
             p for p in self.game_manager.players.values()
-            if p.role.can_vote_with_wolves()
+            if p.role and p.role.can_vote_with_wolves()
         ]
         
         if wolf_players:
             wolf_ids = [p.user_id for p in wolf_players]
             wolves_room_id = await self.room_manager.create_wolves_room(wolf_ids)
+            
+            # Suivre les loups présents dans le salon
+            self._wolves_in_room = set(wolf_ids)
             
             # Configurer le message_handler pour écouter le salon des loups
             if wolves_room_id and self.message_handler:
@@ -350,10 +411,10 @@ class WerewolfBot:
             lover_ids = [p.user_id for p in lovers]
             await self.room_manager.create_couple_room(lover_ids)
             
-            # Notifier le couple
+            # Notifier le couple (avec le pseudo et rôle du partenaire)
             if self.notification_manager:
                 await self.notification_manager.send_couple_notification(
-                    lovers[0].user_id, lovers[1].user_id
+                    lovers[0], lovers[1]
                 )
     
     async def _send_role_notifications(self):
@@ -392,6 +453,107 @@ class WerewolfBot:
         
         return message
     
+    def _build_statut_message(self) -> str:
+        """Construit le message de statut de la partie en cours."""
+        from datetime import datetime, timedelta
+        
+        if self.game_manager.phase == GamePhase.SETUP:
+            nb = len(self.registered_players)
+            return (
+                "📋 **Statut de la partie**\n\n"
+                f"⏳ En attente de joueurs — **{nb}** inscrit{'s' if nb > 1 else ''}\n"
+                "La partie démarrera **Dimanche à midi**."
+            )
+        
+        if self.game_manager.phase == GamePhase.ENDED:
+            return "📋 **Statut :** Aucune partie en cours."
+        
+        living = self.game_manager.get_living_players()
+        dead_count = len(self.game_manager.players) - len(living)
+        
+        # Phase actuelle
+        phase_names = {
+            GamePhase.NIGHT: "🌙 Nuit",
+            GamePhase.DAY: "☀️ Jour",
+            GamePhase.VOTE: "🗳️ Vote",
+        }
+        phase_str = phase_names.get(self.game_manager.phase, str(self.game_manager.phase))
+        
+        # Temps restant avant la prochaine phase
+        now = datetime.now()
+        if self.game_manager.phase == GamePhase.NIGHT:
+            next_phase_time = datetime.combine(now.date(), self.scheduler.day_start)
+            if next_phase_time < now:
+                next_phase_time += timedelta(days=1)
+            next_phase_name = "☀️ Jour"
+        elif self.game_manager.phase == GamePhase.DAY:
+            next_phase_time = datetime.combine(now.date(), self.scheduler.vote_start)
+            if next_phase_time < now:
+                next_phase_time += timedelta(days=1)
+            next_phase_name = "🗳️ Vote"
+        elif self.game_manager.phase == GamePhase.VOTE:
+            next_phase_time = datetime.combine(now.date(), self.scheduler.night_start)
+            if next_phase_time < now:
+                next_phase_time += timedelta(days=1)
+            next_phase_name = "🌙 Nuit"
+        else:
+            next_phase_time = None
+            next_phase_name = ""
+        
+        remaining_str = ""
+        if next_phase_time:
+            remaining = next_phase_time - now
+            hours, remainder = divmod(int(remaining.total_seconds()), 3600)
+            minutes = remainder // 60
+            if hours > 0:
+                remaining_str = f"{hours}h{minutes:02d}"
+            else:
+                remaining_str = f"{minutes} min"
+        
+        # Maire
+        mayor = self.game_manager.get_mayor()
+        mayor_str = f"👑 Maire : **{mayor.display_name}**" if mayor else "👑 Maire : _aucun_"
+        
+        message = "📋 **Statut de la partie**\n\n"
+        message += f"**Phase :** {phase_str}\n"
+        message += f"**Jour :** {self.game_manager.day_count}\n"
+        message += f"**Vivants :** {len(living)} / {len(self.game_manager.players)}\n"
+        message += f"**Morts :** {dead_count}\n"
+        message += f"{mayor_str}\n"
+        if remaining_str:
+            message += f"\n⏰ Prochaine phase ({next_phase_name}) dans **{remaining_str}**"
+        
+        return message
+    
+    def _build_joueurs_message(self) -> str:
+        """Construit la liste des joueurs (vivants/morts, sans révéler les rôles)."""
+        if not self.game_manager.players:
+            if self.registered_players:
+                nb = len(self.registered_players)
+                names = ", ".join(self.registered_players.values())
+                return f"👥 **Joueurs inscrits ({nb}):**\n{names}"
+            return "👥 Aucun joueur dans la partie."
+        
+        living = self.game_manager.get_living_players()
+        dead = [p for p in self.game_manager.players.values() if not p.is_alive]
+        mayor = self.game_manager.get_mayor()
+        
+        message = f"👥 **Joueurs ({len(self.game_manager.players)})**\n\n"
+        
+        # Vivants
+        message += f"**✅ Vivants ({len(living)}):**\n"
+        for p in living:
+            crown = " 👑" if p == mayor else ""
+            message += f"• {p.display_name}{crown}\n"
+        
+        # Morts
+        if dead:
+            message += f"\n**💀 Morts ({len(dead)}):**\n"
+            for p in dead:
+                message += f"• ~~{p.display_name}~~ — _{p.role.name}_\n"
+        
+        return message
+    
     async def _on_night_start(self, phase: GamePhase):
         """Appelé au début de chaque nuit (21h).
         
@@ -402,11 +564,19 @@ class WerewolfBot:
         
         # ── 1. Résoudre le vote du village (VOTE → NIGHT) ──
         if self.game_manager.phase == GamePhase.VOTE:
+            # Annuler les rappels de vote
+            if self._vote_reminder_task and not self._vote_reminder_task.done():
+                self._vote_reminder_task.cancel()
+            
             vote_result = self.game_manager.end_vote_phase()
             
             eliminated = vote_result.get("eliminated")
             all_deaths = vote_result.get("all_deaths", [])
             if eliminated:
+                self._game_events.append(
+                    f"Jour {self.game_manager.day_count} — 🗳️ **{eliminated.display_name}** "
+                    f"éliminé par le vote ({eliminated.role.name})"
+                )
                 await self.room_manager.send_to_village(
                     f"🗳️ **Résultat du vote :** **{eliminated.display_name}** "
                     f"a été éliminé par le village !\n"
@@ -418,6 +588,10 @@ class WerewolfBot:
                 # Annoncer les morts d'amoureux
                 for dead in all_deaths:
                     if dead != eliminated:
+                        self._game_events.append(
+                            f"Jour {self.game_manager.day_count} — 💔 **{dead.display_name}** "
+                            f"meurt de chagrin ({dead.role.name})"
+                        )
                         await self.room_manager.send_to_village(
                             f"💔 **{dead.display_name}** meurt de chagrin (amoureux/se) !\n"
                             f"Son rôle était : _{dead.role.name}_"
@@ -429,11 +603,28 @@ class WerewolfBot:
                     "(égalité ou aucun vote)."
                 )
             
+            # Envoyer les DM de mort
+            if eliminated and self.notification_manager:
+                await self.notification_manager.send_death_notification(
+                    eliminated.user_id, eliminated.role
+                )
+                for dead in all_deaths:
+                    if dead != eliminated:
+                        await self.notification_manager.send_death_notification(
+                            dead.user_id, dead.role
+                        )
+            
+            # Vérifier conversion Enfant Sauvage (le mentor a peut-être été éliminé)
+            await self._check_enfant_sauvage_conversion()
+            
             # Vérifier victoire après le vote
             if vote_result.get("winner"):
                 await self._announce_victory(vote_result["winner"])
                 self.scheduler.stop()
                 return
+            
+            # Vérifier succession de maire
+            await self._check_mayor_succession()
         
         # ── 2. Démarrer la nuit ──
         self.game_manager.set_phase(GamePhase.NIGHT)
@@ -468,6 +659,9 @@ class WerewolfBot:
         if results.get('converted'):
             await self._handle_conversion(results['converted'])
         
+        # Vérifier conversion Enfant Sauvage (son mentor est peut-être mort cette nuit)
+        await self._check_enfant_sauvage_conversion()
+        
         # Annoncer les morts
         message = "☀️ **Le jour se lève sur le village...**\n\n"
         
@@ -477,6 +671,10 @@ class WerewolfBot:
                 player = self.game_manager.get_player(player_id)
                 if player:
                     message += f"• **{player.display_name}** — _{player.role.name}_\n"
+                    self._game_events.append(
+                        f"Nuit {self.game_manager.night_count} — 💀 **{player.display_name}** "
+                        f"tué durant la nuit ({player.role.name})"
+                    )
                     # Ajouter au cimetière
                     await self.room_manager.add_to_dead(player_id)
         else:
@@ -493,6 +691,15 @@ class WerewolfBot:
         
         await self.room_manager.send_to_village(message)
         
+        # Envoyer les DM de mort
+        if results['deaths'] and self.notification_manager:
+            for player_id in results['deaths']:
+                player = self.game_manager.get_player(player_id)
+                if player:
+                    await self.notification_manager.send_death_notification(
+                        player.user_id, player.role
+                    )
+        
         # Réinitialiser le flag sorcière
         self._sorciere_notified = False
         self._wolf_votes_locked = False
@@ -503,6 +710,10 @@ class WerewolfBot:
             self.scheduler.stop()
         else:
             await self._check_victory()
+        
+        # Vérifier succession de maire (si le jeu n'est pas terminé)
+        if self.game_manager.phase != GamePhase.ENDED:
+            await self._check_mayor_succession()
     
     async def _handle_conversion(self, converted_user_id: str):
         """Gère l'ajout d'un joueur converti au salon des loups."""
@@ -511,6 +722,10 @@ class WerewolfBot:
             return
         
         logger.info(f"🐺 {player.display_name} a été converti en loup-garou par le Loup Noir")
+        self._game_events.append(
+            f"Nuit {self.game_manager.night_count} — 🐺 **{player.display_name}** "
+            f"converti en Loup-Garou par le Loup Noir"
+        )
         
         # Ajouter au salon des loups
         if self.room_manager.wolves_room:
@@ -648,6 +863,12 @@ class WerewolfBot:
         
         # Planifier la notification du Mentaliste X heures avant la fin du vote (21h)
         asyncio.create_task(self._schedule_mentaliste_notification())
+        
+        # Planifier les rappels de vote
+        self._last_vote_snapshot = {}
+        if self._vote_reminder_task and not self._vote_reminder_task.done():
+            self._vote_reminder_task.cancel()
+        self._vote_reminder_task = asyncio.create_task(self._schedule_vote_reminders())
     
     async def _schedule_mentaliste_notification(self):
         """Envoie la prédiction du Mentaliste X heures avant la fin du vote."""
@@ -672,11 +893,128 @@ class WerewolfBot:
         
         await self._notify_mentaliste()
     
+    async def _schedule_vote_reminders(self):
+        """Planifie les rappels de vote pendant la phase de vote.
+        
+        Logique :
+        - Rappel toutes les heures (si les votes ont changé)
+        - Rappel chaque minute pendant les 5 dernières minutes
+        - Rappel final 30 secondes avant la fin
+        - DM aux joueurs qui n'ont pas encore voté à chaque rappel
+        """
+        from datetime import datetime, timedelta
+        
+        try:
+            # Calculer la fin du vote (21h = début de la nuit)
+            vote_end = datetime.combine(datetime.now().date(), self.scheduler.night_start)
+            if vote_end < datetime.now():
+                vote_end += timedelta(days=1)
+            
+            # Phase 1 : Rappels toutes les heures (si votes ont changé)
+            while True:
+                if self.game_manager.phase != GamePhase.VOTE:
+                    return
+                
+                remaining = (vote_end - datetime.now()).total_seconds()
+                
+                # Si on est dans les 5 dernières minutes, passer à la phase 2
+                if remaining <= 300:
+                    break
+                
+                # Attendre 1 heure (ou jusqu'à 5 min avant la fin)
+                wait = min(3600, remaining - 300)
+                await asyncio.sleep(wait)
+                
+                if self.game_manager.phase != GamePhase.VOTE:
+                    return
+                
+                # Vérifier si les votes ont changé
+                current_votes = dict(self.game_manager.vote_manager.votes)
+                if current_votes != self._last_vote_snapshot:
+                    self._last_vote_snapshot = current_votes
+                    remaining = (vote_end - datetime.now()).total_seconds()
+                    minutes_left = int(remaining / 60)
+                    await self._send_vote_reminder(f"⏰ Rappel — il reste environ **{minutes_left} minutes** pour voter.")
+                    await self._remind_non_voters()
+            
+            # Phase 2 : Rappels chaque minute pendant les 5 dernières minutes
+            while True:
+                if self.game_manager.phase != GamePhase.VOTE:
+                    return
+                
+                remaining = (vote_end - datetime.now()).total_seconds()
+                
+                # Si on est dans les 30 dernières secondes, passer à la phase 3
+                if remaining <= 30:
+                    break
+                
+                # Attendre 1 minute (ou jusqu'à 30s avant la fin)
+                wait = min(60, remaining - 30)
+                await asyncio.sleep(wait)
+                
+                if self.game_manager.phase != GamePhase.VOTE:
+                    return
+                
+                remaining = (vote_end - datetime.now()).total_seconds()
+                if remaining > 30:
+                    minutes_left = max(1, int(remaining / 60))
+                    await self._send_vote_reminder(
+                        f"⏰ **Plus que {minutes_left} minute{'s' if minutes_left > 1 else ''} pour voter !**"
+                    )
+                    await self._remind_non_voters()
+            
+            # Phase 3 : Rappel final
+            if self.game_manager.phase != GamePhase.VOTE:
+                return
+            
+            remaining = (vote_end - datetime.now()).total_seconds()
+            if remaining > 5:
+                await asyncio.sleep(remaining - 5)
+            
+            if self.game_manager.phase != GamePhase.VOTE:
+                return
+            
+            await self._send_vote_reminder("⏰ **Dernières secondes pour voter !** 🚨")
+            
+        except asyncio.CancelledError:
+            logger.debug("Vote reminders annulés")
+        except Exception as e:
+            logger.error(f"Erreur dans les rappels de vote: {e}")
+    
+    async def _send_vote_reminder(self, header_message: str):
+        """Envoie un rappel de vote dans le village avec le résumé actuel."""
+        summary = self.game_manager.vote_manager.get_vote_summary()
+        message = f"{header_message}\n\n📊 {summary}"
+        await self.room_manager.send_to_village(message)
+    
+    async def _remind_non_voters(self):
+        """Envoie un DM aux joueurs vivants qui n'ont pas encore voté."""
+        living = self.game_manager.get_living_players()
+        voters = set(self.game_manager.vote_manager.votes.keys())
+        
+        for player in living:
+            if player.user_id not in voters and player.can_vote:
+                await self.client.send_dm(
+                    player.user_id,
+                    "⏰ **Rappel :** Vous n'avez pas encore voté !\n"
+                    "Utilisez `/vote {pseudo}` dans le salon du village."
+                )
+    
     async def _end_game(self):
         """Termine la partie et nettoie les salons."""
         logger.info("Fin de la partie")
         
-        self.game_manager.set_phase(GamePhase.ENDED)
+        # Annuler le timeout de succession du maire
+        if self._mayor_succession_task and not self._mayor_succession_task.done():
+            self._mayor_succession_task.cancel()
+        
+        # Annuler les rappels de vote
+        if self._vote_reminder_task and not self._vote_reminder_task.done():
+            self._vote_reminder_task.cancel()
+        
+        # S'assurer que la phase est bien ENDED
+        if self.game_manager.phase != GamePhase.ENDED:
+            self.game_manager.set_phase(GamePhase.ENDED)
         
         # Supprimer tous les salons de jeu (village, loups, couple, cimetière)
         await self.room_manager.cleanup_rooms()
@@ -702,7 +1040,11 @@ class WerewolfBot:
             self.scheduler.stop()
     
     async def _announce_victory(self, winner: Team):
-        """Annonce la victoire."""
+        """Annonce la victoire avec statistiques détaillées."""
+        # Sauvegarder les résultats de la partie dans la BDD
+        # (leaderboard, stats joueurs, historique)
+        self.game_manager.end_game(winner)
+        
         team_names = {
             Team.GENTIL: "🏘️ **Les Villageois**",
             Team.MECHANT: "🐺 **Les Loups-Garous**",
@@ -717,7 +1059,12 @@ class WerewolfBot:
                 team_display = "☠️ **Personne** (égalité)"
         elif winner == Team.COUPLE:
             cupidon = self.game_manager.get_cupidon_player()
-            if cupidon:
+            living = self.game_manager.get_living_players()
+            lovers = [p for p in living if p.lover and p.lover.is_alive]
+            cupidon_in_couple = cupidon and cupidon in lovers
+            cupidon_wins = (cupidon and cupidon.is_alive
+                            and (cupidon_in_couple or self._cupidon_wins_with_couple))
+            if cupidon_wins and not cupidon_in_couple:
                 team_display = "💕 **Le Couple + Cupidon**"
             else:
                 team_display = "💕 **Le Couple**"
@@ -730,7 +1077,28 @@ class WerewolfBot:
         message += "📋 **Rôles:**\n"
         for player in self.game_manager.players.values():
             status = "💀" if not player.is_alive else "✅"
-            message += f"{status} **{player.display_name}**: {player.role.name}\n"
+            extras = []
+            if player.is_mayor:
+                extras.append("👑 Maire")
+            if player.lover:
+                extras.append(f"💕 couple avec {player.lover.display_name}")
+            extra_str = f" ({', '.join(extras)})" if extras else ""
+            message += f"{status} **{player.display_name}**: {player.role.name}{extra_str}\n"
+        
+        # Statistiques détaillées
+        message += "\n📊 **Statistiques de la partie:**\n"
+        message += f"• Durée : {self.game_manager.day_count} jour{'s' if self.game_manager.day_count > 1 else ''}, "
+        message += f"{self.game_manager.night_count} nuit{'s' if self.game_manager.night_count > 1 else ''}\n"
+        
+        living = self.game_manager.get_living_players()
+        dead = [p for p in self.game_manager.players.values() if not p.is_alive]
+        message += f"• Survivants : {len(living)} / {len(self.game_manager.players)}\n"
+        
+        # Résumé des événements marquants
+        if self._game_events:
+            message += "\n📜 **Chronologie:**\n"
+            for event in self._game_events:
+                message += f"• {event}\n"
         
         await self.room_manager.send_to_village(message)
     
@@ -760,6 +1128,10 @@ class WerewolfBot:
         display_name = self.message_handler.extract_user_id(user_id)
         
         self.registered_players[user_id] = display_name
+        
+        # Persister l'inscription en BDD (crash-safe)
+        self.game_manager.db.save_registration(user_id, display_name)
+        
         logger.info(f"Nouveau joueur inscrit: {display_name}")
         
         await self.client.send_message(
@@ -774,7 +1146,8 @@ class WerewolfBot:
         room_id: str,
         user_id: str,
         command: str,
-        args: list
+        args: list,
+        event_id: str = None
     ) -> dict:
         """Gère une commande de jeu avec validation du contexte (salon + rôle)."""
         # Commandes de leaderboard (accessibles à tous, partout)
@@ -795,6 +1168,18 @@ class WerewolfBot:
         
         if command == 'roles':
             message = self.leaderboard_manager.get_role_stats_message()
+            await self.client.send_message(room_id, message, formatted=True)
+            return {'success': True}
+        
+        # Commande /statut — état actuel de la partie
+        if command == 'statut':
+            message = self._build_statut_message()
+            await self.client.send_message(room_id, message, formatted=True)
+            return {'success': True}
+        
+        # Commande /joueurs — liste des joueurs
+        if command == 'joueurs':
+            message = self._build_joueurs_message()
             await self.client.send_message(room_id, message, formatted=True)
             return {'success': True}
         
@@ -853,6 +1238,15 @@ class WerewolfBot:
                 await self.client.send_dm(user_id, "❌ Le Dictateur ne peut agir que **pendant le jour**.")
                 return {'success': False, 'error': 'Phase incorrecte'}
         
+        # Maire : désignation du successeur, DM uniquement
+        if command == 'maire':
+            if not is_dm:
+                await self.client.send_dm(
+                    user_id,
+                    "❌ La commande **/maire** doit être utilisée en **message privé** avec le bot."
+                )
+                return {'success': False, 'error': 'Commande privée uniquement'}
+        
         # Commandes nocturnes privées : uniquement en DM, la nuit
         night_dm_commands = [
             'voyante', 'sorciere-sauve', 'sorciere-tue', 'garde', 'cupidon',
@@ -897,6 +1291,45 @@ class WerewolfBot:
                 and self.game_manager.phase == GamePhase.NIGHT):
                 await self._check_wolf_vote_complete()
             
+            # Voleur échange : notifier la cible et gérer les salons
+            if (result.get('success') and command == 'voleur-echange'
+                    and result.get('swapped_target')):
+                swapped = result['swapped_target']
+                await self.client.send_dm(
+                    swapped.user_id,
+                    "🔄 **Votre rôle a changé !**\n\n"
+                    "Le **Voleur** a échangé son rôle avec le vôtre.\n"
+                    f"Vous êtes maintenant: **{swapped.role.name}**\n\n"
+                    "Votre ancien pouvoir a été transféré au Voleur."
+                )
+                # Gérer les salons loups après l'échange
+                await self._handle_voleur_swap_rooms(player, swapped)
+            
+            # Traiter les morts instantanées (Chasseur, Dictateur)
+            # Ces commandes tuent immédiatement → il faut annoncer, ajouter
+            # au cimetière, vérifier conversions et conditions de victoire.
+            if result.get('success') and result.get('deaths'):
+                await self._process_command_deaths(result, command, user_id)
+            
+            # Maire succession : annoncer le nouveau maire
+            if result.get('success') and command == 'maire':
+                new_mayor = result.get('new_mayor')
+                if new_mayor:
+                    # Annuler le timeout
+                    if self._mayor_succession_task and not self._mayor_succession_task.done():
+                        self._mayor_succession_task.cancel()
+                    # Annoncer dans le village
+                    await self.room_manager.send_to_village(
+                        f"👑 **{new_mayor.display_name}** est le nouveau maire !\n"
+                        f"Désigné par le maire sortant."
+                    )
+                    # Informer le nouveau maire
+                    await self.client.send_dm(
+                        new_mayor.user_id,
+                        "👑 **Vous êtes le nouveau maire !**\n\n"
+                        "Votre vote compte désormais double et vous départagez les égalités."
+                    )
+            
             return result
         
         except Exception as e:
@@ -935,6 +1368,234 @@ class WerewolfBot:
             
             # Notifier la Sorcière
             await self._notify_sorciere_wolf_target()
+    
+    async def _process_command_deaths(self, result: dict, command: str, actor_id: str):
+        """Traite les effets Matrix des morts causées par des commandes instantanées.
+        
+        Appelé après /tuer (Chasseur) ou /dictateur. Ces commandes tuent
+        immédiatement via game.kill_player() (mute + retrait loups déjà gérés
+        par les callbacks), mais il reste à :
+        - Annoncer la mort dans le village
+        - Ajouter au cimetière
+        - Vérifier les conversions (Enfant Sauvage)
+        - Vérifier les conditions de victoire
+        """
+        deaths = result.get('deaths', [])
+        if not deaths:
+            return
+        
+        actor = self.game_manager.get_player(actor_id)
+        
+        for dead in deaths:
+            # Construire l'annonce selon le contexte
+            if (command == 'tuer' and actor and actor.role
+                    and actor.role.role_type == RoleType.CHASSEUR):
+                # Mort par amoureux cascade
+                if dead.lover and not dead.lover.is_alive and dead != actor:
+                    msg = (
+                        f"💔 **{dead.display_name}** meurt de chagrin (amoureux/se) !\n"
+                        f"Son rôle était : _{dead.role.name}_"
+                    )
+                    self._game_events.append(
+                        f"💔 **{dead.display_name}** meurt de chagrin ({dead.role.name})"
+                    )
+                elif dead.user_id == actor_id:
+                    # Le chasseur s'est tiré dessus? Improbable mais sûr.
+                    continue
+                else:
+                    msg = (
+                        f"💥 **Le Chasseur tire sa dernière balle !** "
+                        f"**{dead.display_name}** s'effondre !\n"
+                        f"Son rôle était : _{dead.role.name}_"
+                    )
+                    self._game_events.append(
+                        f"🔫 **{actor.display_name}** (Chasseur) tire sur "
+                        f"**{dead.display_name}** ({dead.role.name})"
+                    )
+            elif command == 'dictateur':
+                if dead.user_id == actor_id:
+                    msg = (
+                        f"⚔️ **Le Dictateur {dead.display_name}** paie le prix "
+                        f"de son erreur et meurt à son tour !"
+                    )
+                    self._game_events.append(
+                        f"⚔️ **{dead.display_name}** (Dictateur) meurt de son erreur"
+                    )
+                else:
+                    msg = (
+                        f"⚔️ **Le Dictateur a pris le pouvoir !** "
+                        f"**{dead.display_name}** est éliminé sans procès !\n"
+                        f"Son rôle était : _{dead.role.name}_"
+                    )
+                    self._game_events.append(
+                        f"⚔️ Le Dictateur élimine **{dead.display_name}** ({dead.role.name})"
+                    )
+            else:
+                msg = (
+                    f"💀 **{dead.display_name}** est mort !\n"
+                    f"Son rôle était : _{dead.role.name}_"
+                )
+            
+            await self.room_manager.send_to_village(msg)
+            await self.room_manager.add_to_dead(dead.user_id)
+        
+        # Envoyer les DM de mort
+        if self.notification_manager:
+            for dead in deaths:
+                await self.notification_manager.send_death_notification(
+                    dead.user_id, dead.role
+                )
+        
+        # Vérifier conversion Enfant Sauvage
+        await self._check_enfant_sauvage_conversion()
+        
+        # Vérifier conditions de victoire
+        await self._check_victory()
+        
+        # Vérifier succession de maire (si le jeu n'est pas terminé)
+        if self.game_manager.phase != GamePhase.ENDED:
+            await self._check_mayor_succession()
+    
+    async def _check_enfant_sauvage_conversion(self):
+        """Détecte si un Enfant Sauvage a été converti en loup et gère les effets Matrix.
+        
+        Après la mort d'un joueur, l'Enfant Sauvage dont le mentor est mort
+        est automatiquement converti en Loup-Garou par on_player_death().
+        Cette méthode détecte la conversion et :
+        - Invite le joueur dans le salon des loups
+        - Lui envoie un DM d'information
+        - Informe la meute
+        """
+        for player in self.game_manager.players.values():
+            if (player.is_alive
+                    and player.mentor is not None
+                    and player.role
+                    and player.role.role_type == RoleType.LOUP_GAROU
+                    and player.user_id not in self._wolves_in_room):
+                
+                logger.info(f"🐺 {player.display_name} (ex-Enfant Sauvage) devient loup-garou !")
+                
+                # Ajouter au salon des loups
+                if self.room_manager.wolves_room:
+                    try:
+                        await self.client.invite_user(
+                            self.room_manager.wolves_room, player.user_id
+                        )
+                        self._wolves_in_room.add(player.user_id)
+                    except Exception as e:
+                        logger.error(f"Erreur ajout ex-Enfant Sauvage au salon loups: {e}")
+                
+                # Informer le joueur
+                await self.client.send_dm(
+                    player.user_id,
+                    "🐺 **Votre mentor est mort !**\n\n"
+                    "Votre instinct sauvage prend le dessus... "
+                    "Vous êtes désormais un **Loup-Garou** !\n"
+                    "Rejoignez la meute dans le salon des loups et votez chaque nuit."
+                )
+                
+                # Informer les loups
+                if self.room_manager.wolves_room:
+                    await self.client.send_message(
+                        self.room_manager.wolves_room,
+                        f"🐺 **{player.display_name}** rejoint la meute !",
+                        formatted=True
+                    )
+    
+    async def _handle_voleur_swap_rooms(self, voleur: Player, swapped: Player):
+        """Gère les salons loups après un échange Voleur ↔ joueur.
+        
+        Si le Voleur a volé un rôle loup, il doit être ajouté au salon des loups.
+        Si l'ex-loup est devenu Voleur, il doit être retiré du salon des loups.
+        """
+        if not self.room_manager.wolves_room:
+            return
+        
+        # Le Voleur (qui a maintenant le rôle de la cible) est-il un loup ?
+        if voleur.role and voleur.role.can_vote_with_wolves():
+            try:
+                await self.client.invite_user(self.room_manager.wolves_room, voleur.user_id)
+                self._wolves_in_room.add(voleur.user_id)
+                await self.client.send_dm(
+                    voleur.user_id,
+                    "🐺 **Vous avez rejoint la meute !**\n\n"
+                    "Vous pouvez désormais communiquer et voter avec les loups "
+                    "dans le salon des loups."
+                )
+                await self.client.send_message(
+                    self.room_manager.wolves_room,
+                    f"🐺 **{voleur.display_name}** rejoint la meute !",
+                    formatted=True
+                )
+            except Exception as e:
+                logger.error(f"Erreur ajout Voleur→loup au salon des loups: {e}")
+        
+        # L'ex-loup (qui est maintenant Voleur) doit être retiré du salon
+        if swapped.user_id in self._wolves_in_room:
+            try:
+                await self.client.kick_user(
+                    self.room_manager.wolves_room, swapped.user_id,
+                    "Votre rôle a changé."
+                )
+                self._wolves_in_room.discard(swapped.user_id)
+            except Exception as e:
+                logger.error(f"Erreur retrait ex-loup du salon des loups: {e}")
+
+    async def _check_mayor_succession(self):
+        """Vérifie si une succession de maire est nécessaire et la lance."""
+        if not self.game_manager._pending_mayor_succession:
+            return
+        
+        dead_mayor = self.game_manager._pending_mayor_succession
+        
+        # Annoncer dans le village
+        await self.room_manager.send_to_village(
+            f"👑 **Le maire {dead_mayor.display_name} est mort !**\n"
+            f"Il doit désigner son successeur parmi les vivants..."
+        )
+        
+        # DM au maire mort avec la liste des vivants
+        living = self.game_manager.get_living_players()
+        living_list = ", ".join(f"**{p.pseudo}**" for p in living)
+        await self.client.send_dm(
+            dead_mayor.user_id,
+            f"👑 **Vous êtes mort en tant que maire.**\n\n"
+            f"Désignez votre successeur avec `/maire {{pseudo}}`.\n\n"
+            f"Joueurs vivants : {living_list}\n\n"
+            f"⏰ Vous avez **60 secondes** pour choisir, sinon un successeur sera désigné au hasard."
+        )
+        
+        # Lancer le timeout
+        if self._mayor_succession_task and not self._mayor_succession_task.done():
+            self._mayor_succession_task.cancel()
+        self._mayor_succession_task = asyncio.create_task(
+            self._mayor_succession_timeout()
+        )
+    
+    async def _mayor_succession_timeout(self):
+        """Timeout de 60 secondes pour la succession du maire."""
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            return
+        
+        if not self.game_manager._pending_mayor_succession:
+            return  # Déjà résolu
+        
+        if self.game_manager.phase == GamePhase.ENDED:
+            return
+        
+        new_mayor = self.game_manager.auto_designate_mayor()
+        if new_mayor:
+            await self.room_manager.send_to_village(
+                f"👑 **{new_mayor.display_name}** est désigné maire par défaut "
+                f"(le maire sortant n'a pas choisi à temps)."
+            )
+            await self.client.send_dm(
+                new_mayor.user_id,
+                "👑 **Vous êtes le nouveau maire !**\n\n"
+                "Votre vote compte désormais double et vous départagez les égalités."
+            )
     
     async def _remove_wolf_from_room(self, user_id: str):
         """Retire un loup mort du salon des loups."""
@@ -1017,7 +1678,8 @@ class WerewolfBot:
         # Trouver la Petite Fille
         little_girl = None
         for player in self.game_manager.players.values():
-            if player.role.name == "Petite Fille" and player.is_alive:
+            if (player.role and player.role.role_type == RoleType.PETITE_FILLE
+                    and player.is_alive):
                 little_girl = player
                 break
         

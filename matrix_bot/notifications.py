@@ -36,6 +36,11 @@ class NotificationManager:
             for action in actions:
                 message += f"• {action}\n"
         
+        # Cas spécial : Loup Bavard → afficher le mot imposé
+        if role.name == "Loup Bavard" and hasattr(role, 'word_to_say') and role.word_to_say:
+            message += f"\n🗣️ **Votre mot imposé pour demain : {role.word_to_say}**\n"
+            message += "Vous DEVEZ prononcer ce mot dans le salon du village demain, sinon vous mourrez !\n"
+        
         await self.room_manager.send_dm(user_id, message)
     
     async def send_death_notification(self, user_id: str, role: Role):
@@ -46,23 +51,40 @@ class NotificationManager:
         # Message spécial pour le chasseur
         if role.name == "Chasseur":
             message += "🎯 En tant que Chasseur, vous pouvez encore éliminer quelqu'un !\n"
-            message += "Utilisez `/shoot {pseudo}` pour tirer sur votre cible.\n\n"
+            message += "Utilisez `/tuer {pseudo}` pour tirer sur votre cible.\n\n"
         
         message += "Vous avez été ajouté au **Cimetière** où vous pouvez discuter avec les autres morts."
         
         await self.room_manager.send_dm(user_id, message)
     
-    async def send_couple_notification(self, user_id_1: str, user_id_2: str):
-        """Notifie les deux amoureux de leur couple."""
-        message = "💕 **Cupidon vous a choisi !**\n\n"
-        message += "Vous êtes maintenant en couple avec un autre joueur.\n"
-        message += "Vous avez été ajouté à un salon privé pour communiquer.\n\n"
-        message += "⚠️ **Important:**\n"
-        message += "• Si votre partenaire meurt, vous mourez aussi\n"
-        message += "• Si vous êtes les 2 derniers survivants, vous gagnez ensemble\n"
+    async def send_couple_notification(self, player1, player2):
+        """Notifie les deux amoureux de leur couple avec l'identité de leur partenaire.
         
-        await self.room_manager.send_dm(user_id_1, message)
-        await self.room_manager.send_dm(user_id_2, message)
+        Args:
+            player1: Premier joueur du couple (objet Player).
+            player2: Second joueur du couple (objet Player).
+        """
+        role1_name = player1.role.name if player1.role else "Inconnu"
+        role2_name = player2.role.name if player2.role else "Inconnu"
+        
+        # Message pour player1
+        msg1 = "💕 **Cupidon vous a choisi !**\n\n"
+        msg1 += f"Vous êtes en couple avec **{player2.pseudo}** (_{role2_name}_).\n"
+        msg1 += "Vous avez été ajouté à un salon privé pour communiquer.\n\n"
+        msg1 += "⚠️ **Important:**\n"
+        msg1 += "• Si votre partenaire meurt, vous mourez aussi\n"
+        msg1 += "• Si vous êtes les 2 derniers survivants, vous gagnez ensemble\n"
+        
+        # Message pour player2
+        msg2 = "💕 **Cupidon vous a choisi !**\n\n"
+        msg2 += f"Vous êtes en couple avec **{player1.pseudo}** (_{role1_name}_).\n"
+        msg2 += "Vous avez été ajouté à un salon privé pour communiquer.\n\n"
+        msg2 += "⚠️ **Important:**\n"
+        msg2 += "• Si votre partenaire meurt, vous mourez aussi\n"
+        msg2 += "• Si vous êtes les 2 derniers survivants, vous gagnez ensemble\n"
+        
+        await self.room_manager.send_dm(player1.user_id, msg1)
+        await self.room_manager.send_dm(player2.user_id, msg2)
     
     async def send_conversion_notification(self, user_id: str, new_role: Role):
         """Notifie un joueur de sa conversion (ex: Loup Blanc → Loup)."""
@@ -74,7 +96,7 @@ class NotificationManager:
         await self.room_manager.send_dm(user_id, message)
     
     def _format_role_message(self, role: Role) -> str:
-        """Formate le message d'annonce de rôle."""
+        """Formate le message d'annonce de rôle avec mini-tutoriel."""
         # Emoji selon l'équipe
         emoji = {
             Team.GENTIL: "🏘️",
@@ -101,6 +123,11 @@ class NotificationManager:
         commands = self._get_role_commands(role)
         for cmd in commands:
             message += f"• {cmd}\n"
+        
+        # Mini-tutoriel avec exemples concrets
+        tutorial = self._get_role_tutorial(role)
+        if tutorial:
+            message += f"\n💡 **Comment jouer :**\n{tutorial}"
         
         return message
     
@@ -205,3 +232,152 @@ class NotificationManager:
             commands.extend(role_commands[role.name])
         
         return commands
+    
+    def _get_role_tutorial(self, role: Role) -> str:
+        """Retourne un mini-tutoriel avec exemples concrets pour chaque rôle."""
+        tutorials = {
+            "Loup-Garou": (
+                "🐺 Chaque nuit, rendez-vous dans le **salon des loups** pour "
+                "discuter avec la meute et choisir une victime.\n"
+                "Exemple : `/vote Alice` dans le salon des loups.\n"
+                "Le jour, restez discret dans le village et essayez de ne pas "
+                "éveiller les soupçons !"
+            ),
+            "Loup Voyant": (
+                "🔮 Vous pouvez espionner le rôle d'un joueur **avant** de voter "
+                "avec la meute.\n"
+                "Exemple : `/voyante Bob` (en DM) pour voir son rôle.\n"
+                "Puis `/lg` (en DM) pour redevenir loup normal et voter.\n"
+                "⚠️ Si vous votez avec la meute, vous perdez votre voyance cette nuit."
+            ),
+            "Loup Blanc": (
+                "⚪ Vous jouez avec les loups MAIS votre objectif est d'être le "
+                "**dernier survivant**.\n"
+                "Une nuit sur deux, vous pouvez éliminer un joueur (même un loup) "
+                "en secret.\n"
+                "Exemple : `/tuer Charlie` (en DM, les nuits impaires).\n"
+                "🎯 Stratégie : éliminez les loups quand il ne reste que peu de villageois."
+            ),
+            "Loup Noir": (
+                "🖤 Vous pouvez convertir la cible des loups en loup-garou au lieu "
+                "de la tuer (**une seule fois** dans la partie).\n"
+                "Exemple : `/convertir` (en DM) après le vote des loups.\n"
+                "💡 Gardez cette capacité pour un moment stratégique !"
+            ),
+            "Loup Bavard": (
+                "🗣️ Chaque nuit, un **mot imposé** vous est attribué. Vous devez "
+                "le prononcer dans le village pendant le jour, sinon vous mourez !\n"
+                "💡 Intégrez le mot naturellement dans la conversation pour ne pas "
+                "être repéré."
+            ),
+            "Voyante": (
+                "👁️ Chaque nuit, vous pouvez espionner le rôle exact d'un joueur.\n"
+                "Exemple : `/voyante Alice` (en DM au bot).\n"
+                "💡 Le jour, partagez vos découvertes avec prudence — les loups "
+                "vous cibleront si vous vous dévoilez trop vite !"
+            ),
+            "Voyante d'Aura": (
+                "✨ Comme la Voyante, mais vous voyez l'**aura** (Gentil/Méchant) "
+                "au lieu du rôle exact.\n"
+                "Exemple : `/voyante Bob` (en DM au bot).\n"
+                "💡 Utile pour détecter les loups sans connaître les rôles précis."
+            ),
+            "Sorcière": (
+                "🧪 Vous avez **2 potions** (une seule utilisation chaque) :\n"
+                "• **Vie** : sauver la victime des loups → `/sorciere-sauve Alice`\n"
+                "• **Mort** : empoisonner quelqu'un → `/sorciere-tue Bob`\n"
+                "Vous pouvez utiliser les deux la même nuit !\n"
+                "💡 Le bot vous prévient qui les loups ont ciblé."
+            ),
+            "Cupidon": (
+                "💘 La première nuit, vous mariez deux joueurs.\n"
+                "Exemple : `/cupidon Alice Bob` (en DM).\n"
+                "Les amoureux meurent ensemble. S'ils sont les derniers, "
+                "ils gagnent (et vous aussi !).\n"
+                "💡 Mariez un loup et un villageois pour créer un dilemme intéressant."
+            ),
+            "Chasseur": (
+                "🔫 Quand vous mourez, vous emportez quelqu'un avec vous !\n"
+                "Exemple : `/tuer Charlie` (en DM) après votre mort.\n"
+                "⚠️ Vous avez peu de temps pour agir après votre mort."
+            ),
+            "Garde": (
+                "🛡️ Chaque nuit, vous protégez un joueur contre les loups.\n"
+                "Exemple : `/garde Alice` (en DM).\n"
+                "⚠️ Vous ne pouvez pas protéger le même joueur deux nuits de suite.\n"
+                "💡 Protégez les joueurs importants (Voyante, Sorcière si dévoilés)."
+            ),
+            "Petite Fille": (
+                "👀 Vous espionnez les loups ! Chaque nuit, vous recevez "
+                "automatiquement leurs messages (potentiellement brouillés).\n"
+                "⚠️ Pas de commande à faire, c'est passif.\n"
+                "💡 Attention à ne pas dévoiler cette info — les loups vous "
+                "élimineront en priorité !"
+            ),
+            "Corbeau": (
+                "🪶 Chaque nuit, vous maudissez un joueur : il reçoit **+2 votes** "
+                "pour le prochain vote du village.\n"
+                "Exemple : `/corbeau Alice` (en DM).\n"
+                "💡 Ciblez les joueurs que vous soupçonnez d'être loups pour "
+                "les faire éliminer plus facilement."
+            ),
+            "Dictateur": (
+                "⚔️ Une fois dans la partie (de jour), vous pouvez éliminer un "
+                "joueur sans vote.\n"
+                "Exemple : `/dictateur Bob` (en DM).\n"
+                "⚠️ Si la cible est un villageois, VOUS mourez aussi !\n"
+                "💡 Soyez sûr de votre cible avant d'utiliser ce pouvoir."
+            ),
+            "Voleur": (
+                "🎭 La première nuit, vous pouvez :\n"
+                "• Tirer 2 cartes : `/voleur-tirer` (en DM)\n"
+                "• Choisir une carte : `/voleur-choisir 1` ou `/voleur-choisir 2`\n"
+                "• OU échanger avec un joueur : `/voleur-echange Alice`\n"
+                "💡 Vous gardez le rôle choisi pour le reste de la partie."
+            ),
+            "Enfant Sauvage": (
+                "🧒 La première nuit, choisissez un **mentor**.\n"
+                "Exemple : `/enfant Alice` (en DM).\n"
+                "Si votre mentor meurt, vous devenez **Loup-Garou** !\n"
+                "💡 Choisissez quelqu'un qui a des chances de survivre longtemps."
+            ),
+            "Médium": (
+                "🔮 Chaque nuit, vous pouvez communiquer avec un joueur mort.\n"
+                "Exemple : `/medium Alice` (en DM).\n"
+                "💡 Les morts connaissent les rôles de tous — ils peuvent "
+                "vous donner des informations précieuses !"
+            ),
+            "Mercenaire": (
+                "🎯 Une cible vous est assignée automatiquement au début de la partie.\n"
+                "Si votre cible est éliminée par le vote du village dans les 2 "
+                "premiers jours, vous gagnez une vie supplémentaire !\n"
+                "💡 Orientez le vote vers votre cible sans paraître suspect."
+            ),
+            "Mentaliste": (
+                "🧠 Quelques heures avant la fin du vote, vous recevez "
+                "automatiquement une indication : le joueur le plus voté est-il "
+                "**côté village** ou **côté loups** ?\n"
+                "💡 Partagez cette info pour orienter le vote... ou gardez-la "
+                "pour vous si vous pensez que les loups vous écoutent."
+            ),
+            "Montreur d'Ours": (
+                "🐻 Chaque matin, si un **loup** est assis à côté de vous "
+                "(joueurs adjacents dans la liste), l'ours grogne et le village "
+                "est prévenu.\n"
+                "⚠️ C'est automatique, pas de commande. Mais les loups sauront "
+                "que vous êtes le Montreur d'Ours !"
+            ),
+            "Villageois": (
+                "🏘️ Vous n'avez pas de pouvoir spécial, mais votre vote est crucial !\n"
+                "Exemple : `/vote Alice` dans le salon du village pendant la phase de vote.\n"
+                "💡 Observez les discussions, repérez les comportements suspects "
+                "et votez pour éliminer les loups !"
+            ),
+            "Idiot": (
+                "🤪 Si vous êtes éliminé par le vote du village, vous survivez ! "
+                "Mais vous perdez votre droit de vote.\n"
+                "💡 Vous pouvez continuer à participer aux discussions et "
+                "influencer les autres joueurs."
+            ),
+        }
+        return tutorials.get(role.name, "")

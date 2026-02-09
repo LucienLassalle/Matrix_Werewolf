@@ -46,7 +46,10 @@ class Chasseur(Role):
             game.cancel_player_actions(target.user_id)
             
             # Tuer via le game manager (mute, retrait salon loups, notifications, amoureux)
-            dead_players = game.kill_player(target, killed_during_day=False)
+            # Le chasseur tire dans la phase opposée à celle où il a été tué :
+            # tué de nuit → tire de jour (killed_during_day=True)
+            # tué de jour → tire de nuit (killed_during_day=False)
+            dead_players = game.kill_player(target, killed_during_day=not self.killed_during_day)
             
             return {
                 "success": True, 
