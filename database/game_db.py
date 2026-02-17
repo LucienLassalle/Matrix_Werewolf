@@ -137,73 +137,83 @@ class GameDatabase:
         wolf_votes: Dict,
         additional_data: Optional[Dict[str, Any]] = None
     ):
-        """Sauvegarde l'état complet du jeu."""
+        """Sauvegarde l'état complet du jeu (transaction atomique)."""
         cursor = self.conn.cursor()
         
-        # Sérialiser les données du jeu
-        game_data = {
-            'votes': votes,
-            'wolf_votes': wolf_votes,
-            'additional': additional_data or {}
-        }
-        
-        # Sauvegarder l'état général
-        cursor.execute("""
-            INSERT OR REPLACE INTO game_state (id, phase, day_count, start_time, last_update, game_data)
-            VALUES (1, ?, ?, ?, ?, ?)
-        """, (
-            phase.value,
-            day_count,
-            start_time.isoformat() if start_time else None,
-            datetime.now().isoformat(),
-            json.dumps(game_data)
-        ))
-        
-        # Sauvegarder les joueurs
-        cursor.execute("DELETE FROM players")
-        for player in players.values():
-            player_data = {
-                'messages_today': player.messages_today,
-                'has_been_pardoned': player.has_been_pardoned,
-                'can_vote': player.can_vote
+        try:
+            cursor.execute("BEGIN TRANSACTION")
+            
+            # Sérialiser les données du jeu
+            game_data = {
+                'votes': votes,
+                'wolf_votes': wolf_votes,
+                'additional': additional_data or {}
             }
             
+            # Sauvegarder l'état général
             cursor.execute("""
-                INSERT INTO players (
-                    user_id, pseudo, role_type, is_alive, is_mayor,
-                    is_protected, lover_id, votes_against, player_data
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO game_state (id, phase, day_count, start_time, last_update, game_data)
+                VALUES (1, ?, ?, ?, ?, ?)
             """, (
-                player.user_id,
-                player.pseudo,
-                player.role.role_type.value if player.role else None,
-                1 if player.is_alive else 0,
-                1 if player.is_mayor else 0,
-                1 if player.is_protected else 0,
-                player.lover.user_id if player.lover else None,
-                player.votes_against,
-                json.dumps(player_data)
+                phase.value,
+                day_count,
+                start_time.isoformat() if start_time else None,
+                datetime.now().isoformat(),
+                json.dumps(game_data)
             ))
-        
-        # Sauvegarder les votes
-        cursor.execute("DELETE FROM votes")
-        for target_id, voters in votes.items():
-            for voter_id in voters:
+            
+            # Sauvegarder les joueurs (atomique DELETE + INSERT)
+            cursor.execute("DELETE FROM players")
+            for player in players.values():
+                player_data = {
+                    'messages_today': player.messages_today,
+                    'has_been_pardoned': player.has_been_pardoned,
+                    'can_vote': player.can_vote,
+                    'target_user_id': player.target.user_id if player.target else None,
+                    'mentor_user_id': player.mentor.user_id if player.mentor else None,
+                    'role_state': player.role.get_state() if player.role else {},
+                }
+                
                 cursor.execute("""
-                    INSERT INTO votes (voter_id, target_id, vote_type, timestamp)
-                    VALUES (?, ?, 'village', ?)
-                """, (voter_id, target_id, datetime.now().isoformat()))
-        
-        for target_id, voters in wolf_votes.items():
-            for voter_id in voters:
-                cursor.execute("""
-                    INSERT INTO votes (voter_id, target_id, vote_type, timestamp)
-                    VALUES (?, ?, 'wolf', ?)
-                """, (voter_id, target_id, datetime.now().isoformat()))
-        
-        self.conn.commit()
-        logger.info(f"État du jeu sauvegardé (phase: {phase.value}, jour: {day_count})")
+                    INSERT INTO players (
+                        user_id, pseudo, role_type, is_alive, is_mayor,
+                        is_protected, lover_id, votes_against, player_data
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    player.user_id,
+                    player.pseudo,
+                    player.role.role_type.value if player.role else None,
+                    1 if player.is_alive else 0,
+                    1 if player.is_mayor else 0,
+                    1 if player.is_protected else 0,
+                    player.lover.user_id if player.lover else None,
+                    player.votes_against,
+                    json.dumps(player_data)
+                ))
+            
+            # Sauvegarder les votes
+            cursor.execute("DELETE FROM votes")
+            for target_id, voters in votes.items():
+                for voter_id in voters:
+                    cursor.execute("""
+                        INSERT INTO votes (voter_id, target_id, vote_type, timestamp)
+                        VALUES (?, ?, 'village', ?)
+                    """, (voter_id, target_id, datetime.now().isoformat()))
+            
+            for target_id, voters in wolf_votes.items():
+                for voter_id in voters:
+                    cursor.execute("""
+                        INSERT INTO votes (voter_id, target_id, vote_type, timestamp)
+                        VALUES (?, ?, 'wolf', ?)
+                    """, (voter_id, target_id, datetime.now().isoformat()))
+            
+            self.conn.commit()
+            logger.info(f"État du jeu sauvegardé (phase: {phase.value}, jour: {day_count})")
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Erreur sauvegarde état du jeu (rollback): {e}")
+            raise
     
     def load_game_state(self) -> Optional[Dict[str, Any]]:
         """Charge l'état du jeu depuis la base de données."""
@@ -253,7 +263,8 @@ class GameDatabase:
         end_time: datetime,
         winner_team: Team,
         players: Dict[str, Player],
-        total_days: int
+        total_days: int,
+        cupidon_wins_with_couple: bool = True
     ):
         """Sauvegarde les résultats d'une partie terminée."""
         cursor = self.conn.cursor()
@@ -289,11 +300,13 @@ class GameDatabase:
                        player.role.role_type == RoleType.LOUP_BLANC and 
                        player.is_alive)
             elif winner_team == Team.COUPLE:
-                # Couple : les amoureux vivants gagnent + Cupidon aussi
+                # Couple : les amoureux vivants gagnent
                 if player.lover is not None and player.is_alive:
                     won = True
                 elif (player.role and 
-                      player.role.role_type == RoleType.CUPIDON):
+                      player.role.role_type == RoleType.CUPIDON
+                      and cupidon_wins_with_couple):
+                    # Cupidon gagne avec le couple uniquement si config activée
                     won = True
                 else:
                     won = False
@@ -306,12 +319,11 @@ class GameDatabase:
             else:
                 won = (player.get_team() == winner_team)
             
-            # Mercenaire : victoire individuelle (additive)
-            if (player.role and 
-                player.role.role_type == RoleType.MERCENAIRE and
-                hasattr(player.role, 'has_won') and 
-                player.role.has_won):
-                won = True
+            # Mercenaire : s'il a rempli son contrat, il a rejoint le
+            # camp du village (team = GENTIL). La condition de victoire
+            # est donc déjà couverte par le check d'équipe ci-dessus.
+            # Pas de victoire "additive" : s'il a rejoint le village
+            # mais que les loups gagnent, le Mercenaire perd aussi.
             
             cursor.execute("""
                 INSERT INTO player_stats (

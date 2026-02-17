@@ -1,8 +1,8 @@
-"""Tests du BotController : commandes /statut, /joueurs, annonces de victoire, rappels de vote.
+"""Tests du BotController : commandes statut, joueurs, annonces de victoire, rappels de vote.
 
 Couvre :
-- /statut : phases SETUP, ENDED, en cours, avec maire
-- /joueurs : sans partie, inscriptions, en jeu, morts, couronne maire
+- statut : phases SETUP, ENDED, en cours, avec maire
+- joueurs : sans partie, inscriptions, en jeu, morts, couronne maire
 - Signature _handle_command accepte event_id
 - Statistiques de fin de partie (chronologie, survivants, couple, maire)
 - Rappels de vote (DM aux non-votants)
@@ -13,6 +13,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, time as dt_time, timedelta
 
+from commands.command_handler import CommandHandler
 from game.game_manager import GameManager
 from game.vote_manager import VoteManager
 from models.player import Player
@@ -23,18 +24,25 @@ from models.enums import GamePhase, Team, RoleType
 #  Helpers
 # ═══════════════════════════════════════════════════════════
 
+# Préfixe par défaut utilisé par CommandHandler quand rien n'est spécifié
+_DEFAULT_PREFIX = CommandHandler.__init__.__defaults__[0]
+
+
 def _make_bot():
     """Crée un WerewolfBot mocké pour tester les méthodes."""
     from matrix_bot.bot_controller import WerewolfBot
 
     bot = object.__new__(WerewolfBot)
-    bot.game_manager = GameManager()
+    bot.game_manager = GameManager(db_path=":memory:")
     bot.registered_players = {}
     bot._night_hour = 21
     bot._day_hour = 8
     bot._vote_hour = 19
+    bot._game_start_day = 6
+    bot._game_start_hour = 12
     bot._game_events = []
     bot._cupidon_wins_with_couple = True
+    bot.command_prefix = _DEFAULT_PREFIX
 
     bot.scheduler = MagicMock()
     bot.scheduler.night_start = dt_time(21, 0)
@@ -45,11 +53,11 @@ def _make_bot():
 
 
 # ═══════════════════════════════════════════════════════════
-#  /statut
+#  statut
 # ═══════════════════════════════════════════════════════════
 
 class TestStatutCommand:
-    """Tests de la construction du message /statut."""
+    """Tests de la construction du message statut."""
 
     def test_statut_setup_phase(self):
         bot = _make_bot()
@@ -96,11 +104,11 @@ class TestStatutCommand:
 
 
 # ═══════════════════════════════════════════════════════════
-#  /joueurs
+#  joueurs
 # ═══════════════════════════════════════════════════════════
 
 class TestJoueursCommand:
-    """Tests de la construction du message /joueurs."""
+    """Tests de la construction du message joueurs."""
 
     def test_joueurs_no_game(self):
         bot = _make_bot()
@@ -153,6 +161,46 @@ class TestJoueursCommand:
 
         msg = bot._build_joueurs_message()
         assert "👑" in msg
+
+
+# ═══════════════════════════════════════════════════════════
+#  ordre d'assise (cercle)
+# ═══════════════════════════════════════════════════════════
+
+class TestSeatingMessage:
+    """Tests de l'annonce de l'ordre d'assise."""
+
+    def test_seating_circle_shows_all_names(self):
+        bot = _make_bot()
+        for i in range(5):
+            bot.game_manager.add_player(f"Player{i}", f"@p{i}:m")
+        bot.game_manager.start_game([f"@p{i}:m" for i in range(5)])
+
+        msg = bot._build_seating_message()
+        for i in range(5):
+            assert f"Player{i}" in msg
+
+    def test_seating_circle_closed(self):
+        """Le premier et le dernier joueur sont indiqués comme voisins."""
+        bot = _make_bot()
+        for i in range(5):
+            bot.game_manager.add_player(f"Player{i}", f"@p{i}:m")
+        bot.game_manager.start_game([f"@p{i}:m" for i in range(5)])
+
+        msg = bot._build_seating_message()
+        # Le message doit mentionner que le cercle est fermé
+        assert "côte à côte" in msg
+        # Premier et dernier noms doivent apparaître dans la ligne de fermeture
+        order = bot.game_manager._player_order
+        first_name = bot.game_manager.players[order[0]].display_name
+        last_name = bot.game_manager.players[order[-1]].display_name
+        assert first_name in msg
+        assert last_name in msg
+
+    def test_seating_empty(self):
+        bot = _make_bot()
+        msg = bot._build_seating_message()
+        assert msg == ""
 
 
 # ═══════════════════════════════════════════════════════════

@@ -46,7 +46,7 @@ class TestRoleTutorials:
     def test_tutorial_exists_for_villageois(self):
         tutorial = self.nm._get_role_tutorial(Villageois())
         assert tutorial != ""
-        assert "/vote" in tutorial
+        assert "!vote" in tutorial
 
     def test_tutorial_exists_for_loup_garou(self):
         tutorial = self.nm._get_role_tutorial(LoupGarou())
@@ -56,7 +56,7 @@ class TestRoleTutorials:
     def test_tutorial_exists_for_voyante(self):
         tutorial = self.nm._get_role_tutorial(Voyante())
         assert tutorial != ""
-        assert "/voyante" in tutorial
+        assert "!voyante" in tutorial
 
     def test_tutorial_exists_for_sorciere(self):
         tutorial = self.nm._get_role_tutorial(Sorciere())
@@ -66,32 +66,32 @@ class TestRoleTutorials:
     def test_tutorial_exists_for_chasseur(self):
         tutorial = self.nm._get_role_tutorial(Chasseur())
         assert tutorial != ""
-        assert "/tuer" in tutorial
+        assert "!tuer" in tutorial
 
     def test_tutorial_exists_for_cupidon(self):
         tutorial = self.nm._get_role_tutorial(Cupidon())
         assert tutorial != ""
-        assert "/cupidon" in tutorial
+        assert "!cupidon" in tutorial
 
     def test_tutorial_exists_for_garde(self):
         tutorial = self.nm._get_role_tutorial(Garde())
         assert tutorial != ""
-        assert "/garde" in tutorial
+        assert "!garde" in tutorial
 
     def test_tutorial_exists_for_corbeau(self):
         tutorial = self.nm._get_role_tutorial(Corbeau())
         assert tutorial != ""
-        assert "/corbeau" in tutorial
+        assert "!corbeau" in tutorial
 
     def test_tutorial_exists_for_dictateur(self):
         tutorial = self.nm._get_role_tutorial(Dictateur())
         assert tutorial != ""
-        assert "/dictateur" in tutorial
+        assert "!dictateur" in tutorial
 
     def test_tutorial_exists_for_voleur(self):
         tutorial = self.nm._get_role_tutorial(Voleur())
         assert tutorial != ""
-        assert "/voleur" in tutorial
+        assert "!voleur" in tutorial
 
     def test_tutorial_exists_for_enfant_sauvage(self):
         tutorial = self.nm._get_role_tutorial(EnfantSauvage())
@@ -101,7 +101,21 @@ class TestRoleTutorials:
     def test_tutorial_exists_for_medium(self):
         tutorial = self.nm._get_role_tutorial(Medium())
         assert tutorial != ""
-        assert "/medium" in tutorial
+        assert "!medium" in tutorial
+
+    def test_tutorial_exists_for_mercenaire(self):
+        tutorial = self.nm._get_role_tutorial(Mercenaire())
+        assert tutorial != ""
+        assert "cible" in tutorial.lower()
+
+    @pytest.mark.asyncio
+    async def test_send_mercenaire_target(self):
+        """Le Mercenaire reçoit sa cible en DM."""
+        await self.nm.send_mercenaire_target("@merc:matrix.org", "Alice")
+        self.room_manager.send_dm.assert_called_once()
+        call_args = self.room_manager.send_dm.call_args
+        assert "Alice" in call_args[0][1]
+        assert "Mission" in call_args[0][1]
 
     def test_tutorial_exists_for_mentaliste(self):
         tutorial = self.nm._get_role_tutorial(Mentaliste())
@@ -125,7 +139,7 @@ class TestRoleTutorials:
     def test_tutorial_exists_for_loup_noir(self):
         tutorial = self.nm._get_role_tutorial(LoupNoir())
         assert tutorial != ""
-        assert "convertir" in tutorial.lower() or "/convertir" in tutorial
+        assert "convertir" in tutorial.lower() or "!convertir" in tutorial
 
     def test_tutorial_exists_for_loup_bavard(self):
         tutorial = self.nm._get_role_tutorial(LoupBavard())
@@ -135,7 +149,7 @@ class TestRoleTutorials:
     def test_tutorial_exists_for_loup_voyant(self):
         tutorial = self.nm._get_role_tutorial(LoupVoyant())
         assert tutorial != ""
-        assert "/voyante" in tutorial or "/lg" in tutorial
+        assert "!voyante" in tutorial or "!lg" in tutorial
 
     def test_tutorial_exists_for_idiot(self):
         tutorial = self.nm._get_role_tutorial(Idiot())

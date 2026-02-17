@@ -32,6 +32,9 @@ class Corbeau(Role):
             if not target or not target.is_alive:
                 return {"success": False, "message": "Cible invalide"}
             
+            if target == self.player:
+                return {"success": False, "message": "Vous ne pouvez pas vous maudire vous-même"}
+            
             target.votes_against += 2
             self.has_used_power_tonight = True
             return {

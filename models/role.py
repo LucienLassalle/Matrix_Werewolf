@@ -95,6 +95,24 @@ class Role(ABC):
     def can_vote_with_wolves(self) -> bool:
         """Indique si ce rôle peut voter avec les loups la nuit."""
         return self.team == Team.MECHANT
-    
+
+    def get_state(self) -> dict:
+        """Sérialise l'état persistant du rôle (pour sauvegarde BDD).
+
+        Les sous-classes surchargent cette méthode pour ajouter leurs
+        attributs spécifiques. Les références à des Player sont stockées
+        sous forme de ``user_id``.
+        """
+        return {}
+
+    def restore_state(self, data: dict, players: dict):
+        """Restaure l'état persistant du rôle depuis la BDD.
+
+        Args:
+            data: Dictionnaire retourné par ``get_state()``.
+            players: Mapping ``user_id → Player`` (pour résoudre les refs).
+        """
+        pass
+
     def __repr__(self):
         return f"{self.role_type.value}"

@@ -69,12 +69,27 @@ class LoupBavard(Role):
         self.has_said_word = False
     
     def check_message_for_word(self, message: str) -> bool:
-        """Vérifie si le message contient le mot imposé."""
-        if self.word_to_say and self.word_to_say.lower() in message.lower():
-            self.has_said_word = True
-            return True
+        """Vérifie si le message contient le mot imposé (mot entier uniquement)."""
+        import re
+        if self.word_to_say:
+            # Utiliser les frontières de mots pour éviter les faux positifs
+            # Ex: "chat" ne doit pas matcher dans "achat"
+            pattern = r'\b' + re.escape(self.word_to_say.lower()) + r'\b'
+            if re.search(pattern, message.lower()):
+                self.has_said_word = True
+                return True
         return False
     
     def on_day_start(self, game: 'GameManager'):
         """Callback du début de jour."""
         pass
+
+    def get_state(self) -> dict:
+        return {
+            'word_to_say': self.word_to_say,
+            'has_said_word': self.has_said_word,
+        }
+
+    def restore_state(self, data: dict, players: dict):
+        self.word_to_say = data.get('word_to_say')
+        self.has_said_word = data.get('has_said_word', False)

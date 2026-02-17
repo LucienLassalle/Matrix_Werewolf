@@ -120,20 +120,23 @@ game.end_vote_phase()
 
 ## 🎮 Commandes disponibles
 
+Le préfixe des commandes est configurable via la variable `COMMAND_PREFIX` dans le fichier `.env` (par défaut `!`).
+Les clients Matrix mobiles réservent `/` pour leurs propres commandes — utilisez `!` ou un autre préfixe de votre choix.
+
 | Commande | Utilisation | Description |
 |----------|-------------|-------------|
-| `/vote {pseudo}` | Loups, Village | Vote pour éliminer |
-| `/tuer {pseudo}` | Chasseur, Dictateur, Loup Blanc | Tue quelqu'un |
-| `/cupidon {pseudo1} {pseudo2}` | Cupidon | Marie deux personnes |
-| `/sorciere-sauve {pseudo}` | Sorcière | Sauve la victime |
-| `/sorciere-tue {pseudo}` | Sorcière | Empoisonne |
-| `/voleur-echange {pseudo}` | Voleur | Échange de rôle |
-| `/voleur-tirer` | Voleur | Tire 2 rôles |
-| `/voyante {pseudo}` | Voyante | Voit un rôle |
-| `/lg` | Loup Voyant | Devient loup normal |
-| `/enfant {pseudo}` | Enfant Sauvage | Choisit mentor |
-| `/medium {pseudo}` | Médium | Parle avec un mort |
-| `/garde {pseudo}` | Garde | Protège quelqu'un |
+| `!vote {pseudo}` | Loups, Village | Vote pour éliminer |
+| `!tuer {pseudo}` | Chasseur, Dictateur, Loup Blanc | Tue quelqu'un |
+| `!cupidon {pseudo1} {pseudo2}` | Cupidon | Marie deux personnes |
+| `!sorciere-sauve {pseudo}` | Sorcière | Sauve la victime |
+| `!sorciere-tue {pseudo}` | Sorcière | Empoisonne |
+| `!voleur-echange {pseudo}` | Voleur | Échange de rôle |
+| `!voleur-tirer` | Voleur | Tire 2 rôles |
+| `!voyante {pseudo}` | Voyante | Voit un rôle |
+| `!lg` | Loup Voyant | Devient loup normal |
+| `!enfant {pseudo}` | Enfant Sauvage | Choisit mentor |
+| `!medium {pseudo}` | Médium | Parle avec un mort |
+| `!garde {pseudo}` | Garde | Protège quelqu'un |
 
 ## 🧪 Tests
 

@@ -49,3 +49,15 @@ class EnfantSauvage(Role):
             from roles.loup_garou import LoupGarou
             new_role = LoupGarou()
             new_role.assign_to_player(self.player)
+
+    def get_state(self) -> dict:
+        return {
+            'has_chosen_mentor': self.has_chosen_mentor,
+            'mentor_user_id': self.player.mentor.user_id if self.player and self.player.mentor else None,
+        }
+
+    def restore_state(self, data: dict, players: dict):
+        self.has_chosen_mentor = data.get('has_chosen_mentor', False)
+        mentor_uid = data.get('mentor_user_id')
+        if mentor_uid and self.player:
+            self.player.mentor = players.get(mentor_uid)

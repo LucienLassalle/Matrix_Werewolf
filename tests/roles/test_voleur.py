@@ -62,9 +62,9 @@ class TestVoleurExtraCardsPool:
         game.available_roles = [
             RoleFactory.create_role(RoleType.VOLEUR),
             RoleFactory.create_role(RoleType.LOUP_GAROU),
-            RoleFactory.create_role(RoleType.VILLAGEOIS),
-            RoleFactory.create_role(RoleType.VILLAGEOIS),
-            RoleFactory.create_role(RoleType.VILLAGEOIS),
+            RoleFactory.create_role(RoleType.SORCIERE),
+            RoleFactory.create_role(RoleType.VOYANTE),
+            RoleFactory.create_role(RoleType.CHASSEUR),
         ]
 
         result = game.start_game()

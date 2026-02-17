@@ -1,24 +1,11 @@
 """Utilitaires pour le jeu."""
 
-from typing import List
+import time
+import random
+import string
+from typing import List, Dict, Union
 from models.player import Player
-from models.enums import Team
-
-
-def mask_wolf_message(message: str, sender_pseudo: str) -> str:
-    """
-    Masque les pseudos dans les messages des loups pour la petite fille.
-    
-    Args:
-        message: Le message original
-        sender_pseudo: Le pseudo de l'envoyeur
-        
-    Returns:
-        Message avec pseudos masqués
-    """
-    # Remplacer le pseudo par "Loup-Garou"
-    masked = message.replace(sender_pseudo, "Loup-Garou")
-    return masked
+from models.enums import Team, RoleType
 
 
 def format_player_list(players: List[Player], show_roles: bool = False) -> str:
@@ -38,7 +25,7 @@ def format_player_list(players: List[Player], show_roles: bool = False) -> str:
         line = f"{status} {player.pseudo}"
         
         if show_roles and player.role:
-            line += f" ({player.role.role_type.value})"
+            line += f" ({player.role.name})"
         
         if player.is_mayor:
             line += " 👑"
@@ -109,33 +96,58 @@ def format_game_summary(game) -> str:
     return summary
 
 
-def validate_role_configuration(role_config: dict, player_count: int) -> dict:
+def validate_role_configuration(role_config: Dict[Union[str, RoleType], int], player_count: int) -> dict:
     """
     Valide une configuration de rôles.
     
     Args:
-        role_config: Configuration des rôles
+        role_config: Configuration des rôles (clés: RoleType ou str)
         player_count: Nombre de joueurs
         
     Returns:
         Résultat de la validation
     """
-    total_roles = sum(role_config.values())
-    wolf_count = role_config.get("LOUP_GAROU", 0) + \
-                 role_config.get("LOUP_BLANC", 0) + \
-                 role_config.get("LOUP_NOIR", 0) + \
-                 role_config.get("LOUP_BAVARD", 0) + \
-                 role_config.get("LOUP_VOYANT", 0)
+    # Normaliser les clés en RoleType
+    def _to_role_type(key):
+        if isinstance(key, RoleType):
+            return key
+        try:
+            return RoleType(key)
+        except (ValueError, KeyError):
+            return None
+    
+    normalized = {}
+    for key, count in role_config.items():
+        rt = _to_role_type(key)
+        if rt:
+            normalized[rt] = count
+    
+    total_roles = sum(normalized.values())
+    
+    wolf_types = {RoleType.LOUP_GAROU, RoleType.LOUP_BLANC, RoleType.LOUP_NOIR,
+                  RoleType.LOUP_BAVARD, RoleType.LOUP_VOYANT}
+    wolf_count = sum(normalized.get(wt, 0) for wt in wolf_types)
     
     errors = []
     warnings = []
     
-    # Vérifications
     if total_roles > player_count:
         errors.append(f"Trop de rôles configurés ({total_roles}) pour {player_count} joueurs")
     
     if wolf_count == 0:
         errors.append("Il faut au moins un loup dans la partie")
+    
+    # Rôles obligatoires
+    mandatory_roles = {
+        RoleType.SORCIERE: "Sorcière",
+        RoleType.VOYANTE: "Voyante",
+        RoleType.CHASSEUR: "Chasseur",
+    }
+    for rt, name in mandatory_roles.items():
+        if normalized.get(rt, 0) == 0:
+            errors.append(f"Le rôle {name} est obligatoire")
+        elif normalized.get(rt, 0) > 1:
+            errors.append(f"Maximum 1 {name} autorisé")
     
     if wolf_count >= player_count / 2:
         warnings.append("Attention: Il y a beaucoup de loups par rapport au nombre de joueurs")
@@ -143,8 +155,7 @@ def validate_role_configuration(role_config: dict, player_count: int) -> dict:
     if player_count < 4:
         errors.append("Il faut au moins 4 joueurs pour une partie")
     
-    # Rôles incompatibles ou redondants
-    if "VOYANTE" in role_config and "VOYANTE_AURA" in role_config:
+    if RoleType.VOYANTE in normalized and RoleType.VOYANTE_AURA in normalized:
         warnings.append("Voyante et Voyante d'Aura sont redondants")
     
     return {
@@ -156,10 +167,6 @@ def validate_role_configuration(role_config: dict, player_count: int) -> dict:
 
 def generate_game_id() -> str:
     """Génère un ID unique pour une partie."""
-    import time
-    import random
-    import string
-    
     timestamp = int(time.time())
     random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
     return f"GAME-{timestamp}-{random_part}"

@@ -59,7 +59,16 @@ class LoupBlanc(Role):
         
         return {"success": False, "message": "Action non disponible"}
     
+    def can_vote_with_wolves(self) -> bool:
+        return True
+
     def on_night_start(self, game: 'GameManager'):
         self.night_count += 1
         self.can_kill_tonight = (self.night_count % 2 == 0)
         self.has_killed_tonight = False
+
+    def get_state(self) -> dict:
+        return {'night_count': self.night_count}
+
+    def restore_state(self, data: dict, players: dict):
+        self.night_count = data.get('night_count', 0)

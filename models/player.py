@@ -66,7 +66,7 @@ class Player:
         Note: votes_against n'est PAS réinitialisé ici car le Corbeau
         ajoute ses votes pendant la nuit et ils doivent persister
         jusqu'au vote du lendemain. La réinitialisation se fait
-        dans start_vote_phase().
+        dans _start_night() du GameManager (avant cet appel).
         """
         self.is_protected = False
         self.messages_today = []

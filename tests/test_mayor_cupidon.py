@@ -213,14 +213,14 @@ class TestMayorSuccession:
 
 
 # ═══════════════════════════════════════════════════════════
-#  Commande /maire via CommandHandler
+#  Commande maire via CommandHandler
 # ═══════════════════════════════════════════════════════════
 
 class TestMaireCommand:
-    """Tests de la commande /maire pour la succession."""
+    """Tests de la commande maire pour la succession."""
 
     def test_maire_command_success(self):
-        """Le maire mort peut utiliser /maire pour désigner un successeur."""
+        """Le maire mort peut utiliser la commande maire pour désigner un successeur."""
         game = make_game(
             ("Maire", "m1", RoleType.VILLAGEOIS),
             ("Successeur", "s1", RoleType.VILLAGEOIS),
@@ -239,7 +239,7 @@ class TestMaireCommand:
         assert game._pending_mayor_succession is None
     
     def test_maire_command_dead_non_mayor_fails(self):
-        """Un joueur mort non-maire ne peut pas utiliser /maire."""
+        """Un joueur mort non-maire ne peut pas utiliser la commande maire."""
         game = make_game(
             ("Maire", "m1", RoleType.VILLAGEOIS),
             ("Mort", "d1", RoleType.VILLAGEOIS),
@@ -258,7 +258,7 @@ class TestMaireCommand:
         assert "mort" in result["message"].lower()
     
     def test_maire_command_alive_player_fails(self):
-        """Un joueur vivant ne peut pas utiliser /maire (pas de succession en cours pour lui)."""
+        """Un joueur vivant ne peut pas utiliser la commande maire (pas de succession en cours pour lui)."""
         game = make_game(
             ("Maire", "m1", RoleType.VILLAGEOIS),
             ("Vivant", "v1", RoleType.VILLAGEOIS),
@@ -276,7 +276,7 @@ class TestMaireCommand:
         assert not result["success"]
     
     def test_maire_command_no_args(self):
-        """La commande /maire sans argument échoue."""
+        """La commande maire sans argument échoue."""
         game = make_game(
             ("Maire", "m1", RoleType.VILLAGEOIS),
             ("Loup", "w1", RoleType.LOUP_GAROU),
@@ -293,7 +293,7 @@ class TestMaireCommand:
         assert "Usage" in result["message"]
     
     def test_maire_command_invalid_target(self):
-        """La commande /maire avec un pseudo inexistant échoue."""
+        """La commande maire avec un pseudo inexistant échoue."""
         game = make_game(
             ("Maire", "m1", RoleType.VILLAGEOIS),
             ("Loup", "w1", RoleType.LOUP_GAROU),
@@ -388,11 +388,11 @@ class TestCupidonWinsWithCouple:
         assert game.check_win_condition() is None
     
     def test_cupidon_in_couple_always_wins(self):
-        """Si Cupidon est un des amoureux, il gagne avec le couple (indép. du flag)."""
+        """Si Cupidon est un des amoureux (couple mixte), il gagne avec le couple (indép. du flag)."""
         game = make_game(
             ("Cupidon", "c1", RoleType.CUPIDON),
-            ("Amoureux", "a1", RoleType.VILLAGEOIS),
-            ("Mort", "d1", RoleType.LOUP_GAROU),
+            ("Amoureux", "a1", RoleType.LOUP_GAROU),
+            ("Mort", "d1", RoleType.VILLAGEOIS),
         )
         game.cupidon_wins_with_couple = False
         
@@ -402,7 +402,7 @@ class TestCupidonWinsWithCouple:
         amoureux.lover = cupidon
         game.players["d1"].is_alive = False
         
-        # 2 derniers vivants sont amoureux → couple gagne (Cupidon est dedans)
+        # 2 derniers vivants sont amoureux d'équipes diff. → couple gagne
         assert game.check_win_condition() == Team.COUPLE
     
     def test_3_alive_not_cupidon_no_win(self):

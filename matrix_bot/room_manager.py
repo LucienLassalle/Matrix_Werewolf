@@ -10,9 +10,10 @@ logger = logging.getLogger(__name__)
 class RoomManager:
     """Gère les salons Matrix pour une partie."""
     
-    def __init__(self, client: MatrixClientWrapper, space_id: str):
+    def __init__(self, client: MatrixClientWrapper, space_id: str, command_prefix: str = "!"):
         self.client = client
         self.space_id = space_id
+        self.prefix = command_prefix
         
         # IDs des salons
         self.lobby_room: Optional[str] = None
@@ -71,7 +72,7 @@ class RoomManager:
                 "🐺 **Bienvenue dans la meute !**\n\n"
                 "Vous êtes les loups-garous. Chaque nuit, vous devez voter ensemble "
                 "pour éliminer un villageois.\n\n"
-                "Utilisez `/vote {pseudo}` pour voter."
+                f"Utilisez `{self.prefix}vote {{pseudo}}` pour voter."
             )
         
         logger.info(f"Salon des loups créé: {self.wolves_room}")
@@ -101,15 +102,6 @@ class RoomManager:
         
         logger.info(f"Salon du couple créé: {self.couple_room}")
         return self.couple_room
-    
-    async def add_to_wolves(self, user_id: str):
-        """Ajoute un joueur au salon des loups (conversion)."""
-        if self.wolves_room:
-            await self.client.invite_user(self.wolves_room, user_id)
-            await self.client.send_message(
-                self.wolves_room,
-                f"🐺 Un nouveau loup rejoint la meute !"
-            )
     
     async def add_to_dead(self, user_id: str):
         """Ajoute un joueur mort au cimetière."""
@@ -152,11 +144,16 @@ class RoomManager:
         """Vérifie si c'est le salon du couple."""
         return room_id == self.couple_room
     
+    def set_lobby_room(self, room_id: str):
+        """Définit le salon du lobby."""
+        self.lobby_room = room_id
+    
     def is_dm_room(self, room_id: str) -> bool:
         """Vérifie si c'est un salon DM (ni village, ni loups, ni couple, ni lobby, ni cimetière)."""
-        known_rooms = [self.village_room, self.wolves_room, self.couple_room, 
-                       self.dead_room, self.lobby_room]
-        return room_id not in known_rooms
+        known_rooms = {self.village_room, self.wolves_room, self.couple_room,
+                       self.dead_room, self.lobby_room}
+        known_rooms.discard(None)  # Ne pas traiter None comme un salon connu
+        return room_id not in known_rooms and room_id is not None
     
     async def delete_room(self, room_id: str):
         """Supprime un salon proprement (retrait du space + kick + leave + forget)."""

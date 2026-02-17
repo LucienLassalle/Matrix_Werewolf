@@ -123,15 +123,5 @@ class MessageDistorter:
             return f"🔊 *Vous entendez les loups...* 👂\n\n{message}"
 
 
-# Fonction helper pour faciliter l'utilisation
-def distort_message(message: str, enabled: bool = True) -> str:
-    """Helper pour altérer un message.
-    
-    Args:
-        message: Le message à altérer
-        enabled: Si l'altération est activée
-    
-    Returns:
-        Le message (altéré ou non selon le paramètre)
-    """
-    return MessageDistorter.format_wolf_message_for_little_girl(message, distort=enabled)
+# Accès direct pour rétro-compatibilité
+distort_message = MessageDistorter.format_wolf_message_for_little_girl

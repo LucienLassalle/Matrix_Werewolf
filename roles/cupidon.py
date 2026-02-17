@@ -66,6 +66,12 @@ class Cupidon(Role):
             }
         
         return {"success": False, "message": "Action non disponible"}
+
+    def get_state(self) -> dict:
+        return {'has_used_power': self.has_used_power}
+
+    def restore_state(self, data: dict, players: dict):
+        self.has_used_power = data.get('has_used_power', False)
     
     def _get_couple_win_condition(self, player1: 'Player', player2: 'Player') -> str:
         """Détermine la condition de victoire du couple."""

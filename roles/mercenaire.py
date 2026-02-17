@@ -69,3 +69,25 @@ class Mercenaire(Role):
     def check_win_condition(self, eliminated_player) -> bool:
         """Vérifie si le mercenaire a gagné."""
         return eliminated_player == self.player.target
+
+    def get_state(self) -> dict:
+        return {
+            'target_assigned': self.target_assigned,
+            'has_won': self.has_won,
+            'days_elapsed': self.days_elapsed,
+            'deadline': self.deadline,
+            'target_user_id': self.player.target.user_id if self.player and self.player.target else None,
+            'team': self.team.value,
+        }
+
+    def restore_state(self, data: dict, players: dict):
+        self.target_assigned = data.get('target_assigned', False)
+        self.has_won = data.get('has_won', False)
+        self.days_elapsed = data.get('days_elapsed', 0)
+        self.deadline = data.get('deadline', 2)
+        target_uid = data.get('target_user_id')
+        if target_uid and self.player:
+            self.player.target = players.get(target_uid)
+        team_val = data.get('team')
+        if team_val:
+            self.team = Team(team_val)

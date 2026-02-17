@@ -1,5 +1,7 @@
 """Rôle Voleur."""
 
+import os
+
 from models.role import Role
 from models.enums import RoleType, Team, ActionType
 from typing import TYPE_CHECKING, Optional, List
@@ -26,11 +28,12 @@ class Voleur(Role):
         self.drawn_roles: Optional[List[Role]] = None
     
     def get_description(self) -> str:
+        p = os.getenv('COMMAND_PREFIX', '!')
         return ("Voleur - La première nuit, vous pouvez :\n"
-                "• Tirer 2 cartes non-utilisées et en choisir une "
-                "(/voleur-tirer puis /voleur-choisir 1 ou 2)\n"
-                "• Échanger votre rôle avec celui d'un autre joueur "
-                "(/voleur-echange {pseudo})\n"
+                f"• Tirer 2 cartes non-utilisées et en choisir une "
+                f"({p}voleur-tirer puis {p}voleur-choisir 1 ou 2)\n"
+                f"• Échanger votre rôle avec celui d'un autre joueur "
+                f"({p}voleur-echange {{pseudo}})\n"
                 "• Ne rien faire et rester Voleur (comme un Villageois)\n\n"
                 "Si vous tirez 2 cartes sans choisir, la première vous sera "
                 "automatiquement attribuée.")
@@ -64,11 +67,12 @@ class Voleur(Role):
                 return {"success": False, "message": "Pas assez de cartes disponibles"}
             
             self.drawn_roles = extra_roles[:2]
+            p = os.getenv('COMMAND_PREFIX', '!')
             return {
                 "success": True,
                 "message": (f"Vous avez tiré : **{self.drawn_roles[0].name}** et "
                            f"**{self.drawn_roles[1].name}**.\n"
-                           "Choisissez avec /voleur-choisir 1 ou /voleur-choisir 2"),
+                           f"Choisissez avec {p}voleur-choisir 1 ou {p}voleur-choisir 2"),
                 "roles": [r.role_type.value for r in self.drawn_roles]
             }
         
@@ -82,6 +86,10 @@ class Voleur(Role):
                 chosen_role = self.drawn_roles[choice]
                 chosen_role.assign_to_player(self.player)
                 self.has_used_power = True
+                
+                # Appeler on_game_start pour initialiser le nouveau rôle
+                # (ex: Mercenaire a besoin d'une cible)
+                chosen_role.on_game_start(game)
                 
                 return {
                     "success": True,
@@ -112,6 +120,10 @@ class Voleur(Role):
                 voleur_role.has_used_power = True
                 voleur_role.assign_to_player(target)
                 
+                # Initialiser le nouveau rôle du Voleur
+                # (ex: Mercenaire a besoin d'une cible)
+                target_role.on_game_start(game)
+                
                 return {
                     "success": True,
                     "message": (f"Vous avez échangé votre rôle avec {target.pseudo}. "
@@ -124,3 +136,9 @@ class Voleur(Role):
                 return {"success": False, "message": "Cible ou choix requis"}
         
         return {"success": False, "message": "Action non disponible"}
+
+    def get_state(self) -> dict:
+        return {'has_used_power': self.has_used_power}
+
+    def restore_state(self, data: dict, players: dict):
+        self.has_used_power = data.get('has_used_power', False)

@@ -525,33 +525,6 @@ class MatrixClientWrapper:
         except Exception as e:
             logger.warning(f"Impossible de mettre à jour m.direct pour {user_id}: {e}")
     
-    async def add_reaction(self, room_id: str, event_id: str, emoji: str):
-        """
-        Ajoute une réaction emoji à un message.
-        
-        Args:
-            room_id: ID du salon
-            event_id: ID de l'événement (message)
-            emoji: Emoji à ajouter
-        """
-        if not self.client:
-            return
-        
-        try:
-            await self.client.room_send(
-                room_id=room_id,
-                message_type="m.reaction",
-                content={
-                    "m.relates_to": {
-                        "rel_type": "m.annotation",
-                        "event_id": event_id,
-                        "key": emoji
-                    }
-                }
-            )
-        except Exception as e:
-            logger.error(f"Erreur ajout réaction: {e}")
-    
     async def invite_user(self, room_id: str, user_id: str):
         """Invite un utilisateur dans un salon."""
         if not self.client:

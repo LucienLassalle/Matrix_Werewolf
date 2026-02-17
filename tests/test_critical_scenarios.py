@@ -18,8 +18,25 @@ from roles import RoleFactory
 
 
 def setup_game(n_players=5, roles=None):
-    """Crée une partie prête à jouer avec des rôles forcés."""
+    """Crée une partie prête à jouer avec des rôles forcés.
+    
+    Les rôles obligatoires (SORCIERE, VOYANTE, CHASSEUR) sont 
+    automatiquement ajoutés s'ils ne sont pas dans la config.
+    Le nombre de joueurs est ajusté si nécessaire.
+    """
     game = GameManager(db_path=":memory:")
+    
+    if roles:
+        roles = dict(roles)  # Copier pour ne pas modifier l'original
+        # Injecter les rôles obligatoires si manquants
+        mandatory = {RoleType.SORCIERE: 1, RoleType.VOYANTE: 1, RoleType.CHASSEUR: 1}
+        for rt, count in mandatory.items():
+            if rt not in roles:
+                roles[rt] = count
+        # Ajuster le nombre de joueurs si nécessaire
+        total_roles = sum(roles.values())
+        n_players = max(n_players, total_roles)
+    
     for i in range(n_players):
         game.add_player(f"P{i}", f"@p{i}:test")
     
@@ -541,7 +558,7 @@ class TestVictoryConditions:
         game = setup_game(5, {RoleType.LOUP_GAROU: 2, RoleType.VILLAGEOIS: 3})
         
         for p in game.players.values():
-            if p.role.role_type == RoleType.VILLAGEOIS:
+            if p.get_team() == Team.GENTIL:
                 p.kill()
         
         assert game.check_win_condition() == Team.MECHANT
@@ -558,18 +575,37 @@ class TestVictoryConditions:
         assert game.check_win_condition() == Team.NEUTRE
     
     def test_couple_last_two_alive_couple_wins(self):
-        """Les 2 derniers vivants sont amoureux → le couple gagne."""
+        """Les 2 derniers vivants sont amoureux (équipes différentes) → le couple gagne."""
         game = setup_game(5, {RoleType.LOUP_GAROU: 1, RoleType.VILLAGEOIS: 4})
         
         players = list(game.players.values())
-        p1, p2 = players[0], players[1]
+        # Forcer un couple loup + villageois (équipes mixtes → COUPLE)
+        wolf = next(p for p in players if p.role.role_type == RoleType.LOUP_GAROU)
+        villager = next(p for p in players if p.role.role_type == RoleType.VILLAGEOIS)
+        wolf.lover = villager
+        villager.lover = wolf
+        
+        for p in players:
+            if p not in (wolf, villager):
+                p.is_alive = False
+        
+        assert game.check_win_condition() == Team.COUPLE
+    
+    def test_couple_same_team_wins_as_team(self):
+        """Les 2 derniers vivants sont amoureux de la même équipe → l'équipe gagne (pas COUPLE)."""
+        game = setup_game(5, {RoleType.LOUP_GAROU: 1, RoleType.VILLAGEOIS: 4})
+        
+        players = list(game.players.values())
+        villagers = [p for p in players if p.role.role_type == RoleType.VILLAGEOIS]
+        p1, p2 = villagers[0], villagers[1]
         p1.lover = p2
         p2.lover = p1
         
-        for p in players[2:]:
-            p.is_alive = False
+        for p in players:
+            if p not in (p1, p2):
+                p.is_alive = False
         
-        assert game.check_win_condition() == Team.COUPLE
+        assert game.check_win_condition() == Team.GENTIL
     
     def test_everyone_dead_neutral(self):
         """Tout le monde est mort → neutre."""

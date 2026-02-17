@@ -15,6 +15,7 @@ class VoteManager:
     def __init__(self):
         self.votes: Dict[str, str] = {}           # voter_uid → target_uid (village)
         self.wolf_votes: Dict[str, str] = {}       # voter_uid → target_uid (loups)
+        self.mayor_votes_for: Dict[str, str] = {}  # voter_uid → target_uid (vote pour maire)
         self._player_cache: Dict[str, Player] = {} # uid → Player pour résolution
     
     def register_player(self, player: Player):
@@ -22,10 +23,8 @@ class VoteManager:
         if player:
             self._player_cache[player.user_id] = player
     
-    def _cache_player(self, player: Player):
-        """Ajoute un joueur au cache interne."""
-        if player:
-            self._player_cache[player.user_id] = player
+    # Alias pour compatibilité
+    _cache_player = register_player
     
     def _get_player(self, user_id: str) -> Optional[Player]:
         """Récupère un joueur depuis le cache."""
@@ -53,6 +52,57 @@ class VoteManager:
             self.votes[voter.user_id] = target.user_id
         
         return {"success": True, "message": f"Vote enregistré pour {target.pseudo}"}
+    
+    def cast_mayor_vote_for(self, voter: Player, target: Player) -> dict:
+        """Enregistre un vote POUR un candidat à l'élection du maire."""
+        if not voter.is_alive:
+            return {"success": False, "message": "Vous êtes mort, vous ne pouvez pas voter"}
+        if not voter.can_vote:
+            return {"success": False, "message": "Vous n'avez pas le droit de vote"}
+        if not target.is_alive:
+            return {"success": False, "message": "Vous ne pouvez pas voter pour quelqu'un de mort"}
+        
+        self._cache_player(voter)
+        self._cache_player(target)
+        
+        self.mayor_votes_for[voter.user_id] = target.user_id
+        
+        return {"success": True, "message": f"Vote pour **{target.pseudo}** enregistré"}
+    
+    def count_mayor_votes(self) -> Dict[str, int]:
+        """Compte les votes pour l'élection du maire.
+        
+        Returns:
+            Dict[target_uid, nombre_de_votes]
+        """
+        counts: Dict[str, int] = {}
+        
+        for voter_uid, target_uid in self.mayor_votes_for.items():
+            voter = self._player_cache.get(voter_uid)
+            if voter and not voter.is_alive:
+                continue
+            counts[target_uid] = counts.get(target_uid, 0) + 1
+        
+        return counts
+    
+    def get_mayor_vote_summary(self) -> str:
+        """Génère un résumé des votes pour l'élection du maire."""
+        counts = self.count_mayor_votes()
+        if not counts:
+            return "Aucun vote enregistré."
+        
+        summary = "Résumé des votes :\n"
+        for uid, score in sorted(counts.items(), key=lambda x: x[1], reverse=True):
+            player = self._player_cache.get(uid)
+            name = player.pseudo if player else uid
+            summary += f"- {name} : {score} vote(s)\n"
+        
+        return summary
+    
+    def reset_mayor_votes(self):
+        """Réinitialise les votes pour l'élection du maire."""
+        self.mayor_votes_for.clear()
+
     
     def add_vote(self, voter: Player, target: Player):
         """Raccourci pour ajouter un vote de village."""
@@ -172,6 +222,7 @@ class VoteManager:
         """Retire tous les votes d'un joueur."""
         self.votes.pop(user_id, None)
         self.wolf_votes.pop(user_id, None)
+        self.mayor_votes_for.pop(user_id, None)
     
     # ==================== Affichage ====================
     

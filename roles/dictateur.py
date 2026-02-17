@@ -24,6 +24,12 @@ class Dictateur(Role):
                 self.player and 
                 self.player.is_alive and 
                 not self.has_used_power)
+
+    def get_state(self) -> dict:
+        return {'has_used_power': self.has_used_power}
+
+    def restore_state(self, data: dict, players: dict):
+        self.has_used_power = data.get('has_used_power', False)
     
     def perform_action(self, game: 'GameManager', action_type: ActionType, target=None, **kwargs) -> dict:
         if action_type == ActionType.DICTATOR_KILL:
@@ -51,24 +57,39 @@ class Dictateur(Role):
             if target.get_team() == Team.MECHANT:
                 # Le dictateur tue un loup, il devient maire
                 dead = game.kill_player(target, killed_during_day=True)
-                # Retirer le titre de maire à l'ancien maire (s'il existe)
-                for p in game.players.values():
-                    if p.is_mayor and p != self.player:
-                        p.is_mayor = False
-                # Annuler toute succession en cours (la cible était peut-être maire)
-                game._pending_mayor_succession = None
-                self.player.is_mayor = True
-                return {
-                    "success": True,
-                    "message": f"Vous avez éliminé {target.pseudo}, un loup ! Vous êtes maintenant maire.",
-                    "became_mayor": True,
-                    "target": target,
-                    "deaths": dead
-                }
+                
+                # Vérifier que le Dictateur est toujours vivant
+                # (il peut mourir en cascade s'il était amoureux de la cible)
+                if self.player.is_alive:
+                    # Retirer le titre de maire à l'ancien maire (s'il existe)
+                    for p in game.players.values():
+                        if p.is_mayor and p != self.player:
+                            p.is_mayor = False
+                    # Annuler toute succession en cours (la cible était peut-être maire)
+                    game._pending_mayor_succession = None
+                    self.player.is_mayor = True
+                    return {
+                        "success": True,
+                        "message": f"Vous avez éliminé {target.pseudo}, un loup ! Vous êtes maintenant maire.",
+                        "became_mayor": True,
+                        "target": target,
+                        "deaths": dead
+                    }
+                else:
+                    # Le Dictateur est mort en cascade (amoureux)
+                    return {
+                        "success": True,
+                        "message": f"Vous avez éliminé {target.pseudo}, un loup ! Mais vous êtes mort de chagrin...",
+                        "became_mayor": False,
+                        "target": target,
+                        "deaths": dead
+                    }
             else:
                 # Le dictateur tue un innocent, il meurt aussi
                 dead_target = game.kill_player(target, killed_during_day=True)
-                dead_self = game.kill_player(self.player, killed_during_day=True)
+                dead_self = []
+                if self.player.is_alive:  # Pas déjà mort par cascade amoureux
+                    dead_self = game.kill_player(self.player, killed_during_day=True)
                 return {
                     "success": True,
                     "message": f"Vous avez éliminé {target.pseudo}, qui n'était pas un loup. Vous mourrez.",

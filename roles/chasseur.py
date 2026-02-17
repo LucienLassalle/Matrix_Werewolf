@@ -73,3 +73,15 @@ class Chasseur(Role):
         if dead_player == self.player and not self.has_shot:
             self.killed_during_day = killed_during_day
             self.can_shoot_now = True
+
+    def get_state(self) -> dict:
+        return {
+            'has_shot': self.has_shot,
+            'can_shoot_now': self.can_shoot_now,
+            'killed_during_day': self.killed_during_day,
+        }
+
+    def restore_state(self, data: dict, players: dict):
+        self.has_shot = data.get('has_shot', False)
+        self.can_shoot_now = data.get('can_shoot_now', False)
+        self.killed_during_day = data.get('killed_during_day', False)

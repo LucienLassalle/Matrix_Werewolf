@@ -2,8 +2,19 @@
 
 import logging
 from database.game_db import GameDatabase
+from models.role import ROLE_DISPLAY_NAMES
+from models.enums import RoleType
 
 logger = logging.getLogger(__name__)
+
+
+def _format_role_name(role_type_str: str) -> str:
+    """Convertit un nom de rôle brut en nom lisible via ROLE_DISPLAY_NAMES."""
+    try:
+        rt = RoleType(role_type_str)
+        return ROLE_DISPLAY_NAMES.get(rt, role_type_str.replace('_', ' ').title())
+    except (ValueError, KeyError):
+        return role_type_str.replace('_', ' ').title()
 
 
 class LeaderboardManager:
@@ -46,7 +57,7 @@ class LeaderboardManager:
         
         # Top 10 des rôles avec le meilleur taux de victoire
         for stats in role_stats[:10]:
-            role_name = stats['role_type'].replace('_', ' ').title()
+            role_name = _format_role_name(stats['role_type'])
             message += (
                 f"• **{role_name}**\n"
                 f"  {stats['wins']}/{stats['games_played']} victoires "
@@ -79,7 +90,7 @@ class LeaderboardManager:
         if role_stats:
             message += "🎭 **Par rôle:**\n"
             for role in role_stats[:5]:  # Top 5 rôles joués
-                role_name = role['role_type'].replace('_', ' ').title()
+                role_name = _format_role_name(role['role_type'])
                 role_win_rate = (role['wins'] / role['games'] * 100 
                                if role['games'] > 0 else 0)
                 message += (
@@ -107,7 +118,7 @@ class LeaderboardManager:
         if role_stats:
             # Rôle avec le meilleur taux de victoire
             best_role = max(role_stats, key=lambda x: x['win_rate'])
-            role_name = best_role['role_type'].replace('_', ' ').title()
+            role_name = _format_role_name(best_role['role_type'])
             message += (
                 f"🏆 **Rôle le plus fort:** {role_name}\n"
                 f"   {best_role['win_rate']:.1f}% de victoires\n\n"
@@ -115,7 +126,7 @@ class LeaderboardManager:
             
             # Rôle le plus joué
             most_played = max(role_stats, key=lambda x: x['games_played'])
-            role_name = most_played['role_type'].replace('_', ' ').title()
+            role_name = _format_role_name(most_played['role_type'])
             message += (
                 f"⭐ **Rôle le plus joué:** {role_name}\n"
                 f"   {most_played['games_played']} parties\n"

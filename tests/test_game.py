@@ -86,19 +86,22 @@ class TestGameManager:
     
     def test_win_condition_wolves_win(self):
         """Test la condition de victoire des loups."""
-        for i in range(5):
+        for i in range(8):
             self.game.add_player(f"Player{i}", f"user_{i}")
         
         self.game.set_roles({
             RoleType.LOUP_GAROU: 2,
-            RoleType.VILLAGEOIS: 3
+            RoleType.SORCIERE: 1,
+            RoleType.VOYANTE: 1,
+            RoleType.CHASSEUR: 1,
+            RoleType.VILLAGEOIS: 3,
         })
         
         self.game.start_game()
         
-        # Tuer tous les villageois
+        # Tuer tous les non-loups
         for player in list(self.game.players.values()):
-            if player.get_team() == Team.GENTIL:
+            if player.get_team() != Team.MECHANT:
                 player.kill()
         
         winner = self.game.check_win_condition()
@@ -107,12 +110,15 @@ class TestGameManager:
     
     def test_win_condition_village_wins(self):
         """Test la condition de victoire du village."""
-        for i in range(4):
+        for i in range(7):
             self.game.add_player(f"Player{i}", f"user_{i}")
         
         self.game.set_roles({
             RoleType.LOUP_GAROU: 1,
-            RoleType.VILLAGEOIS: 3
+            RoleType.SORCIERE: 1,
+            RoleType.VOYANTE: 1,
+            RoleType.CHASSEUR: 1,
+            RoleType.VILLAGEOIS: 3,
         })
         
         self.game.start_game()

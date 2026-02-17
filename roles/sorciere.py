@@ -88,3 +88,13 @@ class Sorciere(Role):
         """Réinitialise l'état au début de la nuit."""
         self.has_healed_tonight = False
         self.has_poisoned_tonight = False
+
+    def get_state(self) -> dict:
+        return {
+            'has_life_potion': self.has_life_potion,
+            'has_death_potion': self.has_death_potion,
+        }
+
+    def restore_state(self, data: dict, players: dict):
+        self.has_life_potion = data.get('has_life_potion', True)
+        self.has_death_potion = data.get('has_death_potion', True)

@@ -34,6 +34,9 @@ class LoupGarou(Role):
         
         return {"success": False, "message": "Action non disponible"}
     
+    def can_vote_with_wolves(self) -> bool:
+        return True
+
     def on_night_start(self, game: 'GameManager'):
         """Réinitialise le vote au début de la nuit."""
         self.voted_for = None

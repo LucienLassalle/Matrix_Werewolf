@@ -12,9 +12,10 @@ logger = logging.getLogger(__name__)
 class MessageHandler:
     """Gère les callbacks et le parsing des messages Matrix."""
     
-    def __init__(self, client: AsyncClient, bot_user_id: str):
+    def __init__(self, client: AsyncClient, bot_user_id: str, command_prefix: str = "!"):
         self.client = client
         self.bot_user_id = bot_user_id
+        self.command_prefix = command_prefix
         
         # Timestamp de démarrage (ms) pour ignorer les messages historiques
         # Lors du premier sync, Matrix renvoie TOUT l'historique.
@@ -73,11 +74,11 @@ class MessageHandler:
             except Exception as e:
                 logger.error(f"Erreur village message handler: {e}")
         
-        # Détecter les commandes (commence par /)
-        if message.startswith('/'):
-            # Commande d'inscription : /inscription
+        # Détecter les commandes (commence par le préfixe configuré)
+        if message.startswith(self.command_prefix):
+            # Commande d'inscription
             cmd_lower = message.split()[0].lower()
-            if cmd_lower == '/inscription':
+            if cmd_lower == f'{self.command_prefix}inscription':
                 logger.info(f"📝 Inscription détectée de {sender} dans {room.display_name}")
                 if self.on_registration:
                     try:
@@ -104,8 +105,9 @@ class MessageHandler:
         
         logger.info(f"Commande: {command} avec args: {args}")
         
-        # Extraire le nom de la commande sans le /
-        command_name = command[1:] if command.startswith('/') else command
+        # Extraire le nom de la commande sans le préfixe
+        prefix_len = len(self.command_prefix)
+        command_name = command[prefix_len:] if command.startswith(self.command_prefix) else command
         
         # Appeler le callback si défini
         if self.on_command:

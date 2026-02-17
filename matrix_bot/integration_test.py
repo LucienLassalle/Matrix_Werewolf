@@ -11,6 +11,7 @@ Tests :
 
 import asyncio
 import logging
+import os
 import time
 from typing import Optional
 
@@ -282,7 +283,7 @@ class IntegrationTester:
     # ══════════════════════════════════════════════════════
 
     async def _test_1_inscription_and_start(self):
-        """2 faux joueurs + 2 vrais écrivent /inscription dans le lobby → partie lancée."""
+        """2 faux joueurs + 2 vrais écrivent la commande inscription dans le lobby → partie lancée."""
         logger.info("── Test 1 : Inscription dans le lobby + lancement de partie ──")
 
         # Préparer un GameManager + CommandHandler de test
@@ -309,19 +310,19 @@ class IntegrationTester:
             self._fail("Aucun compte de test n'a pu rejoindre le lobby")
             return
 
-        # ── Les 2 vrais comptes écrivent /inscription dans le lobby ──
+        # ── Les 2 vrais comptes écrivent la commande inscription dans le lobby ──
         # (on simule ce que fait _handle_registration — l'inscription
         # ajoute le joueur dans le game manager)
-        sent1 = await self._send_as(self.client1, self.lobby_room_id, "/inscription")
+        sent1 = await self._send_as(self.client1, self.lobby_room_id, f"{os.getenv('COMMAND_PREFIX', '!')}inscription")
         if sent1:
-            self._ok(f"{self.user1_id} a écrit /inscription dans le lobby")
+            self._ok(f"{self.user1_id} a écrit {os.getenv('COMMAND_PREFIX', '!')}inscription dans le lobby")
         else:
             self._fail(f"{self.user1_id} n'a pas pu écrire dans le lobby")
             return
 
-        sent2 = await self._send_as(self.client2, self.lobby_room_id, "/inscription")
+        sent2 = await self._send_as(self.client2, self.lobby_room_id, f"{os.getenv('COMMAND_PREFIX', '!')}inscription")
         if sent2:
-            self._ok(f"{self.user2_id} a écrit /inscription dans le lobby")
+            self._ok(f"{self.user2_id} a écrit {os.getenv('COMMAND_PREFIX', '!')}inscription dans le lobby")
         else:
             self._fail(f"{self.user2_id} n'a pas pu écrire dans le lobby")
             return
@@ -458,17 +459,17 @@ class IntegrationTester:
 
         self._ok("Rôles forcés : user1=Loup, user2+fakes=Villageois")
 
-        # ── Le loup envoie la commande /vote dans le salon des loups ──
+        # ── Le loup envoie la commande vote dans le salon des loups ──
         gm.set_phase(GamePhase.NIGHT)
         gm.vote_manager.reset_votes(wolf_votes=True)
 
-        # Le loup écrit /vote dans le salon Matrix des loups
+        # Le loup écrit la commande vote dans le salon Matrix des loups
         await asyncio.sleep(0.5)
         vote_sent = await self._send_as(
-            self.client1, wolves_room, f"/vote {pseudo2}"
+            self.client1, wolves_room, f"{os.getenv('COMMAND_PREFIX', '!')}vote {pseudo2}"
         )
         if vote_sent:
-            self._ok(f"Loup a écrit '/vote {pseudo2}' dans le salon des loups")
+            self._ok(f"Loup a écrit '{os.getenv('COMMAND_PREFIX', '!')}vote {pseudo2}' dans le salon des loups")
         else:
             self._fail("Loup ne peut pas écrire dans le salon des loups")
 

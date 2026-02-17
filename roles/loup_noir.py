@@ -1,5 +1,7 @@
 """Rôle Loup-Noir."""
 
+import os
+
 from models.role import Role
 from models.enums import RoleType, Team, ActionType
 from typing import TYPE_CHECKING
@@ -22,8 +24,9 @@ class LoupNoir(Role):
         self.has_used_conversion = False  # Pouvoir unique dans la partie
     
     def get_description(self) -> str:
+        prefix = os.getenv('COMMAND_PREFIX', '!')
         return ("Loup-Noir - Une fois dans la partie, vous pouvez choisir de convertir la victime des loups "
-                "en loup-garou au lieu de la dévorer. Utilisez `/convertir` pour activer la conversion. "
+                f"en loup-garou au lieu de la dévorer. Utilisez `{prefix}convertir` pour activer la conversion. "
                 "Ce pouvoir ne peut être utilisé qu'une seule fois.")
     
     def can_act_at_night(self) -> bool:
@@ -65,3 +68,9 @@ class LoupNoir(Role):
     def on_night_start(self, game: 'GameManager'):
         """Réinitialise le choix au début de la nuit."""
         self.wants_to_convert = False
+
+    def get_state(self) -> dict:
+        return {'has_used_conversion': self.has_used_conversion}
+
+    def restore_state(self, data: dict, players: dict):
+        self.has_used_conversion = data.get('has_used_conversion', False)

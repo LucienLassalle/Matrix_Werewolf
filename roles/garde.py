@@ -14,6 +14,7 @@ class Garde(Role):
     def __init__(self):
         super().__init__(RoleType.GARDE, Team.GENTIL)
         self.last_protected = None
+        self.has_used_power_tonight = False
     
     def get_description(self) -> str:
         return "Garde - Chaque nuit, vous protégez un joueur des attaques de loups. Vous ne pouvez pas protéger la même personne deux nuits de suite."
@@ -29,11 +30,15 @@ class Garde(Role):
             if not target or not target.is_alive:
                 return {"success": False, "message": "Cible invalide"}
             
+            if self.has_used_power_tonight:
+                return {"success": False, "message": "Vous avez déjà protégé quelqu'un cette nuit"}
+            
             if self.last_protected == target:
                 return {"success": False, "message": "Vous ne pouvez pas protéger la même personne deux nuits de suite"}
             
             target.is_protected = True
             self.last_protected = target
+            self.has_used_power_tonight = True
             return {
                 "success": True,
                 "message": f"Vous protégez {target.pseudo} cette nuit",
@@ -41,3 +46,15 @@ class Garde(Role):
             }
         
         return {"success": False, "message": "Action non disponible"}
+
+    def on_night_start(self, game: 'GameManager'):
+        self.has_used_power_tonight = False
+
+    def get_state(self) -> dict:
+        return {
+            'last_protected_user_id': self.last_protected.user_id if self.last_protected else None,
+        }
+
+    def restore_state(self, data: dict, players: dict):
+        uid = data.get('last_protected_user_id')
+        self.last_protected = players.get(uid) if uid else None

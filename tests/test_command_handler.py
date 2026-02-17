@@ -1,8 +1,8 @@
-"""Tests du CommandHandler : commandes /convertir et /dictateur.
+"""Tests du CommandHandler : commandes convertir et dictateur.
 
 Couvre :
-- /convertir : activation, mauvais rôle
-- /dictateur : exécution, mort si innocent, mauvais rôle, pas de cible
+- convertir : activation, mauvais rôle
+- dictateur : exécution, mort si innocent, mauvais rôle, pas de cible
 """
 
 import pytest
@@ -25,7 +25,7 @@ def make_game(*specs) -> GameManager:
 
 
 class TestConvertirCommand:
-    """Tests de la commande /convertir."""
+    """Tests de la commande convertir."""
 
     def test_convertir_command(self):
         game = make_game(
@@ -49,7 +49,7 @@ class TestConvertirCommand:
 
 
 class TestDictateurCommand:
-    """Tests de la commande /dictateur."""
+    """Tests de la commande dictateur."""
 
     def test_dictateur_kills_wolf(self):
         game = make_game(

@@ -5,7 +5,7 @@ from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, time
 
 from matrix_bot.room_manager import RoomManager
-from matrix_bot.scheduler import GameScheduler, wait_until_sunday_noon
+from matrix_bot.scheduler import GameScheduler, wait_until_new_game, day_name_fr
 from matrix_bot.message_handler import MessageHandler
 from matrix_bot.notifications import NotificationManager
 from matrix_bot.bot_controller import WerewolfBot
