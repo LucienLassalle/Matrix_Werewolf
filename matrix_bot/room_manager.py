@@ -72,7 +72,8 @@ class RoomManager:
                 "🐺 **Bienvenue dans la meute !**\n\n"
                 "Vous êtes les loups-garous. Chaque nuit, vous devez voter ensemble "
                 "pour éliminer un villageois.\n\n"
-                f"Utilisez `{self.prefix}vote {{pseudo}}` pour voter."
+                f"Utilisez `{self.prefix}vote {{pseudo}}` pour voter.",
+                formatted=True
             )
         
         logger.info(f"Salon des loups créé: {self.wolves_room}")
@@ -97,7 +98,8 @@ class RoomManager:
                 "💕 **Vous êtes en couple !**\n\n"
                 "Vous pouvez communiquer librement dans ce salon.\n"
                 "Si l'un de vous meurt, l'autre meurt aussi.\n\n"
-                "⚠️ Vous gagnez ensemble si vous êtes les deux derniers survivants."
+                "⚠️ Vous gagnez ensemble si vous êtes les deux derniers survivants.",
+                formatted=True
             )
         
         logger.info(f"Salon du couple créé: {self.couple_room}")

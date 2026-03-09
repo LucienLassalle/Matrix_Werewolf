@@ -24,3 +24,9 @@ class Idiot(Role):
             self.player.can_vote = False
             return True  # L'idiot est sauvé
         return False  # L'idiot meurt
+
+    def get_state(self) -> dict:
+        return {}
+
+    def restore_state(self, data: dict, players: dict):
+        pass

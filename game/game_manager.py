@@ -404,6 +404,9 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
                     wolf_votes_by_target[target_uid] = []
                 wolf_votes_by_target[target_uid].append(voter_uid)
 
+            # Sérialiser les votes pour le maire
+            mayor_votes = dict(self.vote_manager.mayor_votes_for)
+
             self.db.save_game_state(
                 phase=self.phase,
                 day_count=self.day_count,
@@ -413,9 +416,178 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
                 wolf_votes=wolf_votes_by_target,
                 additional_data={
                     'game_id': self.game_id,
-                    'night_count': self.night_count
+                    'night_count': self.night_count,
+                    'player_order': self._player_order,
+                    'mayor_election_done': self.mayor_election_done,
+                    'cupidon_wins_with_couple': self.cupidon_wins_with_couple,
+                    'mayor_votes': mayor_votes,
+                    'pending_mayor_succession_uid': (
+                        self._pending_mayor_succession.user_id
+                        if self._pending_mayor_succession else None
+                    ),
+                    'game_log': self.game_log,
+                    'extra_roles': [
+                        r.role_type.value for r in self.extra_roles
+                    ],
                 }
             )
             logger.info("État du jeu sauvegardé")
         except Exception as e:
             logger.error(f"Erreur lors de la sauvegarde: {e}")
+
+    def load_state(self) -> bool:
+        """Restaure l'état complet du jeu depuis la base de données.
+
+        Returns:
+            True si l'état a été restauré avec succès, False sinon.
+        """
+        try:
+            data = self.db.load_game_state()
+            if not data:
+                logger.info("Aucun état de jeu à restaurer")
+                return False
+
+            # 1. Phase et compteurs
+            self.phase = GamePhase(data['phase'])
+            self.day_count = data['day_count']
+            if data.get('start_time'):
+                self.start_time = datetime.fromisoformat(data['start_time'])
+
+            additional = data.get('game_data', {}).get('additional', {})
+            self.night_count = additional.get('night_count', 0)
+            self.game_id = additional.get('game_id', self.game_id)
+            self.mayor_election_done = additional.get('mayor_election_done', False)
+            self.cupidon_wins_with_couple = additional.get(
+                'cupidon_wins_with_couple', self.cupidon_wins_with_couple
+            )
+            self.game_log = additional.get('game_log', [])
+
+            # 2. Recréer les joueurs
+            self.players.clear()
+            self._player_order.clear()
+
+            for p_data in data['players']:
+                uid = p_data['user_id']
+                pseudo = p_data['pseudo']
+                player = Player(pseudo, uid)
+                player.is_alive = bool(p_data['is_alive'])
+                player.is_mayor = bool(p_data['is_mayor'])
+                player.is_protected = bool(p_data['is_protected'])
+                player.votes_against = p_data.get('votes_against', 0)
+
+                # Données étendues du joueur
+                player_extra = {}
+                if p_data.get('player_data'):
+                    import json
+                    player_extra = (
+                        json.loads(p_data['player_data'])
+                        if isinstance(p_data['player_data'], str)
+                        else p_data['player_data']
+                    )
+                player.has_been_pardoned = player_extra.get('has_been_pardoned', False)
+                player.can_vote = player_extra.get('can_vote', True)
+                if player_extra.get('display_name'):
+                    player.display_name = player_extra['display_name']
+
+                # Recréer le rôle
+                if p_data.get('role_type'):
+                    role_type = RoleType(p_data['role_type'])
+                    role = RoleFactory.create_role(role_type)
+                    role.assign_to_player(player)
+
+                    # Restaurer l'état interne du rôle
+                    role_state = player_extra.get('role_state', {})
+                    if role_state:
+                        role.restore_state(role_state, {})  # players dict rempli en 2ème passe
+
+                self.players[uid] = player
+                self.vote_manager.register_player(player)
+
+            # Restaurer l'ordre d'assise
+            saved_order = additional.get('player_order', [])
+            if saved_order:
+                self._player_order = [
+                    uid for uid in saved_order if uid in self.players
+                ]
+            else:
+                self._player_order = list(self.players.keys())
+
+            # 3. Seconde passe : résoudre les références inter-joueurs (lover, mentor, target)
+            for p_data in data['players']:
+                uid = p_data['user_id']
+                player = self.players.get(uid)
+                if not player:
+                    continue
+
+                player_extra = {}
+                if p_data.get('player_data'):
+                    import json
+                    player_extra = (
+                        json.loads(p_data['player_data'])
+                        if isinstance(p_data['player_data'], str)
+                        else p_data['player_data']
+                    )
+
+                # Lover
+                lover_uid = p_data.get('lover_id')
+                if lover_uid and lover_uid in self.players:
+                    player.lover = self.players[lover_uid]
+
+                # Mentor (enfant sauvage)
+                mentor_uid = player_extra.get('mentor_user_id')
+                if mentor_uid and mentor_uid in self.players:
+                    player.mentor = self.players[mentor_uid]
+
+                # Target (mercenaire)
+                target_uid = player_extra.get('target_user_id')
+                if target_uid and target_uid in self.players:
+                    player.target = self.players[target_uid]
+
+                # Seconde passe de restore_state avec les joueurs résolus
+                if player.role:
+                    role_state = player_extra.get('role_state', {})
+                    if role_state:
+                        player.role.restore_state(role_state, self.players)
+
+            # 4. Restaurer les votes
+            self.vote_manager.votes.clear()
+            self.vote_manager.wolf_votes.clear()
+            self.vote_manager.mayor_votes_for.clear()
+
+            for vote_row in data.get('village_votes', []):
+                voter_id = vote_row['voter_id']
+                target_id = vote_row['target_id']
+                self.vote_manager.votes[voter_id] = target_id
+
+            for vote_row in data.get('wolf_votes', []):
+                voter_id = vote_row['voter_id']
+                target_id = vote_row['target_id']
+                self.vote_manager.wolf_votes[voter_id] = target_id
+
+            # Restaurer les votes pour le maire depuis additional_data
+            saved_mayor_votes = additional.get('mayor_votes', {})
+            for voter_uid, target_uid in saved_mayor_votes.items():
+                self.vote_manager.mayor_votes_for[voter_uid] = target_uid
+
+            # 5. Succession de maire en attente
+            pending_uid = additional.get('pending_mayor_succession_uid')
+            if pending_uid and pending_uid in self.players:
+                self._pending_mayor_succession = self.players[pending_uid]
+
+            # 6. Extra roles (cartes supplémentaires du Voleur)
+            self.extra_roles.clear()
+            for rt_val in additional.get('extra_roles', []):
+                try:
+                    self.extra_roles.append(RoleFactory.create_role(RoleType(rt_val)))
+                except (ValueError, KeyError):
+                    pass
+
+            logger.info(
+                "État du jeu restauré (phase=%s, jour=%d, nuit=%d, joueurs=%d)",
+                self.phase.value, self.day_count, self.night_count, len(self.players),
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Erreur lors de la restauration de l'état: {e}", exc_info=True)
+            return False

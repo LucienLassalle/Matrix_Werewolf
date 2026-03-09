@@ -47,3 +47,9 @@ class Corbeau(Role):
     
     def on_night_start(self, game: 'GameManager'):
         self.has_used_power_tonight = False
+
+    def get_state(self) -> dict:
+        return {'has_used_power_tonight': self.has_used_power_tonight}
+
+    def restore_state(self, data: dict, players: dict):
+        self.has_used_power_tonight = data.get('has_used_power_tonight', False)

@@ -55,8 +55,6 @@ class PhaseHandlersMixin:
                     f"a été éliminé par le village !\n"
                     f"Son rôle était : **{eliminated.role.name}**"
                 )
-                # Ajouter au cimetière
-                await self.room_manager.add_to_dead(eliminated.user_id)
 
                 # Annoncer les morts d'amoureux
                 for dead in all_deaths:
@@ -69,7 +67,6 @@ class PhaseHandlersMixin:
                             f"💔 **{dead.display_name}** meurt de chagrin (amoureux/se) !\n"
                             f"Son rôle était : **{dead.role.name}**"
                         )
-                        await self.room_manager.add_to_dead(dead.user_id)
             elif vote_result.get("pardoned_idiot"):
                 idiot = vote_result["pardoned_idiot"]
                 await self.room_manager.send_to_village(
@@ -120,6 +117,14 @@ class PhaseHandlersMixin:
                 await self._announce_victory(vote_result["winner"])
                 self.scheduler.stop()
                 return
+            else:
+                # Ajouter les morts au cimetière (Sauf si la partie est terminé)
+                if eliminated:
+                    await self.room_manager.add_to_dead(eliminated.user_id)
+                if all_deaths:
+                    for dead in all_deaths:
+                        if dead != eliminated:
+                            await self.room_manager.add_to_dead(dead.user_id)
 
             # Vérifier succession de maire
             await self._check_mayor_succession()
@@ -137,11 +142,31 @@ class PhaseHandlersMixin:
 
         # ── 2. Phase NIGHT déjà configurée par end_vote_phase / begin_night ──
 
+        # Calculer la deadline des loups pour l'affichage
+        wolf_deadline = self.scheduler.wolf_vote_deadline
+
         await self.room_manager.send_to_village(
             "🌙 **La nuit tombe sur le village...**\n\n"
             "Tout le monde s'endort. Les rôles nocturnes peuvent agir.\n"
-            "Les loups-garous se réveillent pour choisir leur victime."
+            "Les loups-garous se réveillent pour choisir leur victime.\n\n"
+            f"⏰ Les loups ont jusqu'à **{wolf_deadline.strftime('%Hh%M')}** pour voter."
         )
+
+        # Informer les loups de leur deadline dans le salon des loups
+        if self.room_manager.wolves_room:
+            await self.client.send_message(
+                self.room_manager.wolves_room,
+                f"🌙 **C'est la nuit !** Votez pour choisir votre victime.\n\n"
+                f"⏰ **Deadline : {wolf_deadline.strftime('%Hh%M')}** — "
+                f"Passé cette heure, le vote sera verrouillé automatiquement.",
+                formatted=True
+            )
+
+        # Lancer le timer de deadline des loups
+        # Annuler un éventuel timer précédent
+        if self._wolf_deadline_task and not self._wolf_deadline_task.done():
+            self._wolf_deadline_task.cancel()
+        self._wolf_deadline_task = asyncio.create_task(self._wolf_vote_deadline_timer())
 
         # Rappeler les actions nocturnes
         for player in self.game_manager.players.values():
@@ -154,11 +179,77 @@ class PhaseHandlersMixin:
         # Vérifier si un Loup Voyant a rejoint la meute (auto-conversion dernier loup)
         await self._check_loup_voyant_room()
 
+    # ── Deadline vote des loups ───────────────────────────────────────
+
+    async def _wolf_vote_deadline_timer(self: WerewolfBot):
+        """Attend jusqu'à la deadline du vote des loups puis verrouille.
+
+        La deadline est calculée comme ``day_start - sorciere_min_hours``
+        (par défaut 3h avant le lever du jour).  Si les loups ont déjà
+        tous voté (``_wolf_votes_locked``), le timer n'a rien à faire.
+        """
+        from datetime import datetime as dt, timedelta
+
+        deadline_time = self.scheduler.wolf_vote_deadline
+        now = dt.now()
+        target = dt.combine(now.date(), deadline_time)
+        # Si la deadline est déjà passée aujourd'hui, c'est demain
+        if target <= now:
+            target += timedelta(days=1)
+
+        wait_seconds = (target - now).total_seconds()
+        logger.info(
+            "⏳ Deadline loups dans %.0f secondes (%.1fh) — %s",
+            wait_seconds, wait_seconds / 3600,
+            target.strftime('%Hh%M'),
+        )
+
+        try:
+            await asyncio.sleep(wait_seconds)
+        except asyncio.CancelledError:
+            logger.debug("Timer deadline loups annulé")
+            return
+
+        # Si les loups ont déjà voté, rien à faire
+        if self._wolf_votes_locked:
+            logger.info("Deadline loups atteinte, mais les votes étaient déjà verrouillés")
+            return
+
+        logger.info("⏰ Deadline loups atteinte — verrouillage automatique du vote")
+
+        # Verrouiller les votes des loups
+        self._wolf_votes_locked = True
+
+        # Informer les loups dans leur salon
+        if self.room_manager.wolves_room:
+            target = self.game_manager.vote_manager.get_most_voted(is_wolf_vote=True)
+            if target:
+                await self.client.send_message(
+                    self.room_manager.wolves_room,
+                    f"⏰ **Temps écoulé !** Le vote est verrouillé.\n"
+                    f"La meute dévorera **{target.display_name}** cette nuit.",
+                    formatted=True
+                )
+            else:
+                await self.client.send_message(
+                    self.room_manager.wolves_room,
+                    "⏰ **Temps écoulé !** Aucun vote enregistré — "
+                    "la meute ne dévore personne cette nuit.",
+                    formatted=True
+                )
+
+        # Notifier la Sorcière de la cible des loups
+        await self._notify_sorciere_wolf_target()
+
     # ── Jour ──────────────────────────────────────────────────────────
 
     async def _on_day_start(self: WerewolfBot, phase: GamePhase):
         """Appelé au début de chaque jour."""
         logger.info("☀️ Début du jour")
+
+        # Annuler le timer deadline loups (la nuit est finie)
+        if self._wolf_deadline_task and not self._wolf_deadline_task.done():
+            self._wolf_deadline_task.cancel()
 
         # Garde-fou : si aucune nuit n'a eu lieu, rien à résoudre
         if self.game_manager.night_count < 1:
@@ -172,11 +263,12 @@ class PhaseHandlersMixin:
 
         self.game_manager.set_phase(GamePhase.NIGHT)  # Remettre en NIGHT pour resolve_night
 
+        # Créer le salon du couple AVANT la résolution (safety net)
+        # pour ne pas perdre l'info si un amoureux meurt cette nuit
+        await self._create_couple_room_if_needed()
+
         # Résolution de la nuit
         results = self.game_manager.resolve_night()
-
-        # Après la première nuit, créer le salon du couple si nécessaire
-        await self._create_couple_room_if_needed()
 
         # Gérer la conversion Loup Noir
         if results.get('converted'):
@@ -303,7 +395,7 @@ class PhaseHandlersMixin:
             )
         else:
             msg = (
-                f"🌙 **Les loups ont choisi de dévorer** **{wolf_target.display_name}** **cette nuit.**\n\n"
+                f"🌙 **Les loups ont choisi de dévorer {wolf_target.display_name} cette nuit.**\n\n"
             )
             if sorciere.role.has_life_potion:
                 msg += f"• `{self.command_prefix}sorciere-sauve {wolf_target.pseudo}` — Utiliser votre potion de vie pour le/la sauver\n"
@@ -474,6 +566,13 @@ class PhaseHandlersMixin:
             f"{emoji} Le vote semble être {description}\n\n"
             f"💡 Cette information est basée sur les votes actuels — le résultat peut encore changer."
         )
+        # Fournir la liste complète des votes au Mentaliste
+        vote_summary = self.game_manager.vote_manager.get_vote_summary()
+        await self.client.send_dm(
+            mentaliste.user_id,
+            f"📊 Joueur le plus voté actuellement : **{most_voted.display_name}**\n\n"
+            f"**Résumé des votes :**\n{vote_summary}"
+        )
 
         logger.info(f"Mentaliste notifié: issue du vote = {outcome}")
 
@@ -484,8 +583,8 @@ class PhaseHandlersMixin:
 
         Logique :
         - Rappel toutes les heures (si les votes ont changé)
-        - Rappel chaque minute pendant les 5 dernières minutes
-        - Rappel final 30 secondes avant la fin
+        - Rappel 30 minutes avant la fin
+        - Rappel final 5 minutes avant la fin
         - DM aux joueurs qui n'ont pas encore voté à chaque rappel
         """
         from datetime import datetime, timedelta
@@ -503,12 +602,12 @@ class PhaseHandlersMixin:
 
                 remaining = (vote_end - datetime.now()).total_seconds()
 
-                # Si on est dans les 5 dernières minutes, passer à la phase 2
-                if remaining <= 300:
+                # Si on est dans les 30 dernières minutes, passer à la phase 2
+                if remaining <= 1800:  # 30 minutes
                     break
 
-                # Attendre 1 heure (ou jusqu'à 5 min avant la fin)
-                wait = min(3600, remaining - 300)
+                # Attendre 1 heure (ou jusqu'à 30 min avant la fin)
+                wait = min(3600, remaining - 1800)
                 await asyncio.sleep(wait)
 
                 if self.game_manager.phase != GamePhase.VOTE:
@@ -530,44 +629,30 @@ class PhaseHandlersMixin:
                     )
                     await self._remind_non_voters()
 
-            # Phase 2 : Rappels chaque minute pendant les 5 dernières minutes
-            while True:
-                if self.game_manager.phase != GamePhase.VOTE:
-                    return
-
-                remaining = (vote_end - datetime.now()).total_seconds()
-
-                # Si on est dans les 30 dernières secondes, passer à la phase 3
-                if remaining <= 30:
-                    break
-
-                # Attendre 1 minute (ou jusqu'à 30s avant la fin)
-                wait = min(60, remaining - 30)
-                await asyncio.sleep(wait)
-
-                if self.game_manager.phase != GamePhase.VOTE:
-                    return
-
-                remaining = (vote_end - datetime.now()).total_seconds()
-                if remaining > 30:
-                    minutes_left = max(1, int(remaining / 60))
-                    await self._send_vote_reminder(
-                        f"⏰ **Plus que {minutes_left} minute{'s' if minutes_left > 1 else ''} pour voter !**"
-                    )
-                    await self._remind_non_voters()
-
-            # Phase 3 : Rappel final
+            # Phase 2 : Rappel à 30 minutes avant la fin
             if self.game_manager.phase != GamePhase.VOTE:
                 return
 
             remaining = (vote_end - datetime.now()).total_seconds()
-            if remaining > 5:
-                await asyncio.sleep(remaining - 5)
+            if remaining > 1800:
+                await asyncio.sleep(remaining - 1800)
 
             if self.game_manager.phase != GamePhase.VOTE:
                 return
 
-            await self._send_vote_reminder("⏰ **Dernières secondes pour voter !** 🚨")
+            await self._send_vote_reminder("⏰ **Plus que 30 minutes pour voter !**")
+            await self._remind_non_voters()
+
+            # Phase 3 : Rappel final à 5 minutes avant la fin
+            remaining = (vote_end - datetime.now()).total_seconds()
+            if remaining > 300:
+                await asyncio.sleep(remaining - 300)
+
+            if self.game_manager.phase != GamePhase.VOTE:
+                return
+
+            await self._send_vote_reminder("⏰ **Dernières 5 minutes pour voter !** 🚨")
+            await self._remind_non_voters()
 
         except asyncio.CancelledError:
             logger.debug("Vote reminders annulés")
@@ -617,11 +702,10 @@ class PhaseHandlersMixin:
         # Réouvrir les inscriptions dans le lobby
         self._accepting_registrations = True
 
-        # Message dans le lobby
+        # Message dans le lobby (inscriptions)
         jour = day_name_fr(self._game_start_day)
         await self.client.send_message(
             self.lobby_room_id,
-            "🎮 **Partie terminée !**\n\n"
             "Les salons de jeu ont été supprimés.\n"
             f"Tapez `{self.command_prefix}inscription` pour participer à la prochaine partie "
             f"**{jour} à {self._game_start_hour}h**.",
@@ -718,4 +802,8 @@ class PhaseHandlersMixin:
                     # Événements sans phase (chasseur, maire succession…)
                     message += f"  • {event}\n"
 
-        await self.room_manager.send_to_village(message)
+        await self.client.send_message(
+            self.lobby_room_id,
+            message,
+            formatted=True
+        )

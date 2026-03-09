@@ -35,6 +35,7 @@ class GameScheduler:
     - DAY_START_HOUR    → day_start
     - VOTE_START_HOUR   → vote_start
     - GAME_MAX_DURATION_DAYS → max_days
+    - SORCIERE_MIN_HOURS → sorciere_min_hours (heures garanties à la Sorcière)
     """
     
     def __init__(
@@ -43,11 +44,13 @@ class GameScheduler:
         day_start: time | None = None,
         vote_start: time | None = None,
         max_days: int | None = None,
+        sorciere_min_hours: float | None = None,
     ):
         self.night_start = night_start or time(int(os.getenv('NIGHT_START_HOUR', '21')), 0)
         self.day_start   = day_start   or time(int(os.getenv('DAY_START_HOUR',   '8')),  0)
         self.vote_start  = vote_start  or time(int(os.getenv('VOTE_START_HOUR',  '19')), 0)
         self.max_days    = max_days     if max_days is not None else int(os.getenv('GAME_MAX_DURATION_DAYS', '7'))
+        self.sorciere_min_hours = sorciere_min_hours if sorciere_min_hours is not None else float(os.getenv('SORCIERE_MIN_HOURS', '3'))
         
         self.game_start_time: Optional[datetime] = None
         self.current_day: int = 0
@@ -59,6 +62,7 @@ class GameScheduler:
         self.on_night_start: Optional[Callable] = None
         self.on_day_start: Optional[Callable] = None
         self.on_vote_start: Optional[Callable] = None
+        self.on_wolf_vote_deadline: Optional[Callable] = None
         self.on_game_end: Optional[Callable] = None
 
     @property
@@ -68,6 +72,18 @@ class GameScheduler:
         Le vote se termine automatiquement quand la nuit commence.
         """
         return self.night_start
+
+    @property
+    def wolf_vote_deadline(self) -> time:
+        """Heure limite pour le vote des loups.
+
+        Calculée comme ``day_start`` − ``sorciere_min_hours``, afin de
+        garantir à la Sorcière un temps minimum pour agir.
+        Exemple : day_start=08h, sorciere_min_hours=3 → deadline=05h.
+        """
+        day_dt = datetime.combine(datetime.today(), self.day_start)
+        deadline_dt = day_dt - timedelta(hours=self.sorciere_min_hours)
+        return deadline_dt.time()
     
     def start_game(self, start_time: Optional[datetime] = None):
         """Démarre le planning du jeu."""
@@ -92,6 +108,8 @@ class GameScheduler:
             f"Horaires configurés — Nuit: {self.night_start.strftime('%Hh%M')}, "
             f"Jour: {self.day_start.strftime('%Hh%M')}, "
             f"Vote: {self.vote_start.strftime('%Hh%M')}→{self.vote_end.strftime('%Hh%M')}, "
+            f"Deadline loups: {self.wolf_vote_deadline.strftime('%Hh%M')} "
+            f"(Sorcière garantie {self.sorciere_min_hours}h), "
             f"Max jours: {self.max_days}"
         )
         

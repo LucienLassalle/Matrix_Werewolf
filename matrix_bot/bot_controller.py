@@ -115,11 +115,13 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
         self._wolves_in_room: set = set()  # user_ids des loups dans le salon
         self._sorciere_notified = False  # Si la Sorcière a été notifiée du wolf target
         self._wolf_votes_locked = False  # True quand tous les loups ont voté (vote verrouillé)
+        self._wolf_deadline_task: Optional[asyncio.Task] = None  # Timeout deadline vote loups
         self._mayor_succession_task: Optional[asyncio.Task] = None  # Timeout succession maire
         self._vote_reminder_task: Optional[asyncio.Task] = None  # Rappels de vote
         self._chasseur_timeout_tasks: Dict[str, asyncio.Task] = {}  # Timeout tir du chasseur (user_id → task)
         self._last_vote_snapshot: Dict[str, str] = {}  # Snapshot des votes pour détecter les changements
         self._game_events: List[str] = []  # Historique des événements pour le récap de fin
+        self._kill_signal_task: Optional[asyncio.Task] = None  # Surveillance du signal kill admin
         self.running = False
     
     async def start(self):
@@ -162,23 +164,33 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
             logger.info(f"♻️ {len(saved_registrations)} inscription(s) restaurée(s) depuis la BDD")
         
         # Détecter si une partie était en cours (crash mid-game)
+        self._restored_game = False
         if self.game_manager.db.has_active_game():
-            logger.warning(
-                "⚠️ Une partie était en cours avant le crash/redémarrage. "
-                "L'état mid-game ne peut pas être restauré. "
-                "Nettoyage de l'ancien état..."
-            )
-            self.game_manager.db.clear_current_game()
-            await self.client.send_message(
-                self.lobby_room_id,
-                "⚠️ **Le bot a redémarré** — la partie précédente n'a pas pu être "
-                "récupérée.\n\n"
-                f"Tapez `{self.command_prefix}inscription` pour vous réinscrire à la prochaine partie.",
-                formatted=True
-            )
+            restored = await self._restore_game_state()
+            if restored:
+                self._restored_game = True
+                await self.client.send_message(
+                    self.lobby_room_id,
+                    "♻️ **Le bot a redémarré** — la partie en cours a été restaurée avec succès !\n\n"
+                    f"Phase actuelle : **{self.game_manager.phase.value}**, "
+                    f"Jour {self.game_manager.day_count}, Nuit {self.game_manager.night_count}\n"
+                    f"Joueurs : {len(self.game_manager.players)}",
+                    formatted=True
+                )
+            else:
+                logger.warning("Restauration échouée — nettoyage de l'ancien état")
+                self.game_manager.db.clear_current_game()
+                await self.client.send_message(
+                    self.lobby_room_id,
+                    "⚠️ **Le bot a redémarré** — la partie précédente n'a pas pu être "
+                    "récupérée.\n\n"
+                    f"Tapez `{self.command_prefix}inscription` pour vous réinscrire à la prochaine partie.",
+                    formatted=True
+                )
         
         # Message de bienvenue dans le lobby (horaires dynamiques depuis .env)
         jour = day_name_fr(self._game_start_day)
+        wolf_deadline = self.scheduler.wolf_vote_deadline.strftime('%Hh%M')
         welcome_msg = (
             f"🐺 **Bot Loup-Garou démarré !**\n\n"
             f"Tapez `{self.command_prefix}inscription` pour participer à la prochaine partie.\n"
@@ -186,7 +198,8 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
             f"📋 Règles:\n"
             f"• 1 jour IRL = 1 jour + 1 nuit de jeu\n"
             f"• Nuit: {self._night_hour}h → {self._day_hour}h\n"
-            f"• Jour: {self._day_hour}h → {self._vote_hour}h\n"
+            f"  └ Loups: jusqu'à {wolf_deadline} | Sorcière: {wolf_deadline} → {self._day_hour}h\n"
+            f"• Jour: {self._day_hour}h → {self._night_hour}h\n"
             f"• Vote: {self._vote_hour}h → {self._night_hour}h\n"
             f"• Durée max: {self._max_days} jours"
         )
@@ -265,26 +278,98 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
                 "Le bot démarre quand même mais des fonctionnalités peuvent être cassées."
             )
 
+    async def _restore_game_state(self) -> bool:
+        """Restaure l'état complet d'une partie après un crash/redémarrage.
+
+        Reconstruit le GameManager, les salons Matrix, le message handler,
+        et l'état interne du bot pour reprendre la partie là où elle s'est arrêtée.
+
+        Returns:
+            True si la restauration a réussi, False sinon.
+        """
+        try:
+            logger.info("♻️ Tentative de restauration de la partie en cours...")
+
+            # 1. Restaurer l'état du jeu (joueurs, rôles, votes, etc.)
+            if not self.game_manager.load_state():
+                logger.error("Échec de la restauration du GameManager")
+                return False
+
+            # 2. Restaurer les salons Matrix
+            saved_rooms = self.game_manager.db.load_room_state()
+            if saved_rooms:
+                self.room_manager.village_room = saved_rooms.get('village')
+                self.room_manager.wolves_room = saved_rooms.get('wolves')
+                self.room_manager.couple_room = saved_rooms.get('couple')
+                self.room_manager.dead_room = saved_rooms.get('dead')
+            else:
+                logger.warning("Aucun salon Matrix sauvegardé — la restauration reste possible mais limitée")
+
+            # 3. Configurer le message handler pour écouter le village
+            if self.message_handler and self.room_manager.village_room:
+                self.message_handler.village_room_id = self.room_manager.village_room
+
+            # 4. Reconstruire l'état interne du bot
+            self._accepting_registrations = False
+
+            # Reconstruire la liste des loups dans le salon
+            self._wolves_in_room = {
+                p.user_id for p in self.game_manager.players.values()
+                if p.role and p.role.can_vote_with_wolves() and p.is_alive
+            }
+
+            # Reconstruire registered_players à partir des joueurs
+            self.registered_players = {
+                p.user_id: p.display_name
+                for p in self.game_manager.players.values()
+            }
+
+            # Re-lier les callbacks async au game manager
+            self.game_manager.on_remove_wolf_from_room = (
+                lambda uid: asyncio.ensure_future(self._remove_wolf_from_room(uid))
+            )
+            self.game_manager.on_mute_player = (
+                lambda uid: asyncio.ensure_future(self._mute_player(uid))
+            )
+
+            logger.info(
+                "✅ Partie restaurée : phase=%s, jour=%d, nuit=%d, joueurs=%d",
+                self.game_manager.phase.value,
+                self.game_manager.day_count,
+                self.game_manager.night_count,
+                len(self.game_manager.players),
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Erreur lors de la restauration de la partie: {e}", exc_info=True)
+            return False
+
     async def _run_game_loop(self):
         """Boucle principale du jeu."""
         try:
             while self.running:
-                # Attendre le prochain lancement de partie
-                jour = day_name_fr(self._game_start_day)
-                logger.info(f"En attente du prochain {jour} {self._game_start_hour}h...")
-                await self._wait_for_game_start()
-                
-                if not self.running:
-                    break
-                
-                # Démarrer une partie
-                game_started = await self._start_game()
-                
-                if not game_started:
-                    # Pas assez de joueurs ou erreur → nettoyer et recommencer
-                    self.registered_players.clear()
-                    self.game_manager.db.clear_registrations()
-                    continue
+                # Si une partie a été restaurée après un crash, reprendre directement
+                if self._restored_game:
+                    self._restored_game = False
+                    logger.info("♻️ Reprise de la partie restaurée...")
+                else:
+                    # Attendre le prochain lancement de partie
+                    jour = day_name_fr(self._game_start_day)
+                    logger.info(f"En attente du prochain {jour} {self._game_start_hour}h...")
+                    await self._wait_for_game_start()
+                    
+                    if not self.running:
+                        break
+                    
+                    # Démarrer une partie
+                    game_started = await self._start_game()
+                    
+                    if not game_started:
+                        # Pas assez de joueurs ou erreur → nettoyer et recommencer
+                        self.registered_players.clear()
+                        self.game_manager.db.clear_registrations()
+                        continue
                 
                 # Lancer le scheduler
                 self.scheduler.start_game(datetime.now())
@@ -300,9 +385,14 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
                 )
                 
                 # Exécuter le scheduler
+                self._kill_signal_task = asyncio.create_task(self._monitor_kill_signal())
                 await self.scheduler.run()
                 
                 logger.info("Scheduler terminé — fin de partie")
+                
+                # Annuler la surveillance du signal kill
+                if self._kill_signal_task and not self._kill_signal_task.done():
+                    self._kill_signal_task.cancel()
                 
                 # Fin de partie
                 await self._end_game()
@@ -373,6 +463,68 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
                 logger.info(f"{len(self.registered_players)} joueur(s) inscrit(s)")
 
         await asyncio.gather(wait_task, return_exceptions=True)
+
+    async def _monitor_kill_signal(self):
+        """Surveille le fichier sentinelle kill.signal pendant une partie.
+
+        Toutes les 10 secondes, vérifie si un fichier kill.signal existe.
+        Si oui, tue le joueur via _process_command_deaths (même logique
+        que le Chasseur ou le Dictateur).
+        """
+        import json as _json
+
+        signal_path = Path(os.getenv("KILL_SIGNAL", "kill.signal"))
+
+        try:
+            while self.running and self.game_manager.phase != GamePhase.ENDED:
+                await asyncio.sleep(10)
+
+                if not signal_path.exists():
+                    continue
+
+                # Lire et supprimer le signal
+                try:
+                    payload = _json.loads(signal_path.read_text())
+                    signal_path.unlink()
+                except (OSError, _json.JSONDecodeError) as exc:
+                    logger.error("Erreur lecture kill.signal: %s", exc)
+                    continue
+
+                user_id = payload.get("user_id")
+                reason = payload.get("reason", "Tué par un administrateur")
+
+                if not user_id:
+                    logger.warning("kill.signal sans user_id — ignoré")
+                    continue
+
+                player = self.game_manager.get_player(user_id)
+                if not player:
+                    logger.warning("kill.signal: joueur %s introuvable", user_id)
+                    continue
+
+                if not player.is_alive:
+                    logger.warning("kill.signal: joueur %s déjà mort", user_id)
+                    continue
+
+                logger.info("💀 Admin kill: %s (%s) — %s", player.display_name, user_id, reason)
+
+                # Stocker la raison pour que _process_command_deaths puisse l'utiliser
+                self._admin_kill_reason = reason
+
+                # Tuer le joueur
+                all_deaths = self.game_manager.kill_player(player, killed_during_day=True)
+
+                # Déléguer à _process_command_deaths (annonce, cimetière, DMs, cascades)
+                await self._process_command_deaths(
+                    {'deaths': all_deaths},
+                    'admin-kill',
+                    user_id
+                )
+
+        except asyncio.CancelledError:
+            logger.debug("Surveillance kill.signal arrêtée")
+        except Exception as e:
+            logger.error("Erreur dans _monitor_kill_signal: %s", e, exc_info=True)
     
     async def _start_game(self) -> bool:
         """Démarre une nouvelle partie.
@@ -456,6 +608,9 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
         # Envoyer les rôles en DM
         await self._send_role_notifications()
         
+        # Sauvegarder les IDs des salons en BDD pour la récupération crash
+        self._save_room_state()
+        
         return True
     
     async def _create_special_rooms(self):
@@ -500,6 +655,19 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
                 await self.notification_manager.send_couple_notification(
                     lovers[0], lovers[1]
                 )
+            
+            # Mettre à jour les salons sauvegardés en BDD
+            self._save_room_state()
+    
+    def _save_room_state(self):
+        """Sauvegarde les IDs des salons Matrix en BDD pour récupération crash."""
+        rooms = {
+            'village': self.room_manager.village_room,
+            'wolves': self.room_manager.wolves_room,
+            'couple': self.room_manager.couple_room,
+            'dead': self.room_manager.dead_room,
+        }
+        self.game_manager.db.save_room_state(rooms)
     
     async def _send_role_notifications(self):
         """Envoie les informations de rôle à chaque joueur via DM Matrix depuis le bot."""

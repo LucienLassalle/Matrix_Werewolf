@@ -59,7 +59,7 @@ class NotificationManager:
                 potions.append("☠️ Potion de mort : **utilisée**")
             if potions:
                 message += "\n" + "\n".join(potions) + "\n"
-            message += "\n💡 Le bot vous informera de la cible des loups quand ils auront voté.\n"
+            message += "\n💡 Le bot vous informera de la cible des loups quand ils auront voté (au plus tard à la deadline des loups).\n"
         
         await self.room_manager.send_dm(user_id, message)
     

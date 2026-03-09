@@ -416,6 +416,25 @@ class RoleHandlersMixin:
                     self._game_events.append(
                         f"⚔️ Le Dictateur élimine **{dead.display_name}** ({dead.role.name})"
                     )
+            elif command == 'admin-kill':
+                if dead.lover and not dead.lover.is_alive and dead.user_id != actor_id:
+                    msg = (
+                        f"💔 **{dead.display_name}** meurt de chagrin (amoureux/se) !\n"
+                        f"Son rôle était : **{dead.role.name}**"
+                    )
+                    self._game_events.append(
+                        f"💔 **{dead.display_name}** meurt de chagrin ({dead.role.name})"
+                    )
+                else:
+                    reason = getattr(self, '_admin_kill_reason', 'Tué par un administrateur')
+                    msg = (
+                        f"⚡ **{dead.display_name}** a été foudroyé par les dieux !\n"
+                        f"Son rôle était : **{dead.role.name}**\n"
+                        f"_({reason})_"
+                    )
+                    self._game_events.append(
+                        f"⚡ **{dead.display_name}** foudroyé par les dieux ({dead.role.name})"
+                    )
             else:
                 msg = (
                     f"💀 **{dead.display_name}** est mort !\n"

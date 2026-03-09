@@ -117,6 +117,14 @@ class GameDatabase:
             )
         """)
         
+        # Table pour les salons Matrix (persistance crash-safe)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS room_state (
+                key TEXT PRIMARY KEY,
+                room_id TEXT NOT NULL
+            )
+        """)
+        
         self.conn.commit()
         logger.info(f"Base de données initialisée: {self.db_path}")
     
@@ -172,6 +180,7 @@ class GameDatabase:
                     'target_user_id': player.target.user_id if player.target else None,
                     'mentor_user_id': player.mentor.user_id if player.mentor else None,
                     'role_state': player.role.get_state() if player.role else {},
+                    'display_name': player.display_name,
                 }
                 
                 cursor.execute("""
@@ -253,6 +262,7 @@ class GameDatabase:
         cursor.execute("DELETE FROM game_state")
         cursor.execute("DELETE FROM players")
         cursor.execute("DELETE FROM votes")
+        cursor.execute("DELETE FROM room_state")
         self.conn.commit()
         logger.info("État du jeu effacé")
     
@@ -477,3 +487,43 @@ class GameDatabase:
         if not row:
             return False
         return row['phase'] not in ('SETUP', 'ENDED')
+
+    # ==================== Salons Matrix (crash-safe) ====================
+
+    def save_room_state(self, rooms: Dict[str, Optional[str]]):
+        """Sauvegarde les IDs des salons Matrix (persistante en cas de crash).
+
+        Args:
+            rooms: Mapping clé → room_id (ex: 'village' → '!abc:server').
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM room_state")
+        for key, room_id in rooms.items():
+            if room_id:
+                cursor.execute(
+                    "INSERT INTO room_state (key, room_id) VALUES (?, ?)",
+                    (key, room_id),
+                )
+        self.conn.commit()
+        logger.info(f"État des salons sauvegardé ({len(rooms)} entrées)")
+
+    def load_room_state(self) -> Dict[str, str]:
+        """Charge les IDs des salons depuis la BDD.
+
+        Returns:
+            Dict[key, room_id]
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT key, room_id FROM room_state")
+        rows = cursor.fetchall()
+        rooms = {row['key']: row['room_id'] for row in rows}
+        if rooms:
+            logger.info(f"{len(rooms)} salon(s) restauré(s) depuis la BDD")
+        return rooms
+
+    def clear_room_state(self):
+        """Efface les IDs des salons."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM room_state")
+        self.conn.commit()
+        logger.info("État des salons effacé")

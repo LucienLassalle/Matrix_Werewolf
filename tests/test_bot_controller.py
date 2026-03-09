@@ -230,9 +230,14 @@ class TestEndGameStats:
 
     def _make_bot_with_room(self):
         bot = _make_bot()
-        bot.room_manager = MagicMock()
-        bot.room_manager.send_to_village = AsyncMock()
+        bot.lobby_room_id = "!lobby:m"
+        bot.client = MagicMock()
+        bot.client.send_message = AsyncMock(return_value=True)
         return bot
+
+    def _get_victory_message(self, bot):
+        """Extrait le message de victoire envoyé au lobby."""
+        return bot.client.send_message.call_args[0][1]
 
     @pytest.mark.asyncio
     async def test_victory_announcement_includes_stats(self):
@@ -246,7 +251,7 @@ class TestEndGameStats:
 
         await bot._announce_victory(Team.GENTIL)
 
-        message = bot.room_manager.send_to_village.call_args[0][0]
+        message = self._get_victory_message(bot)
         assert "Statistiques" in message or "📊" in message
         assert "3 jour" in message
         assert "Survivants" in message
@@ -264,7 +269,7 @@ class TestEndGameStats:
 
         await bot._announce_victory(Team.GENTIL)
 
-        message = bot.room_manager.send_to_village.call_args[0][0]
+        message = self._get_victory_message(bot)
         assert "Chronologie" in message or "📜" in message
         assert "Player0" in message
         assert "Player1" in message
@@ -284,7 +289,7 @@ class TestEndGameStats:
 
         await bot._announce_victory(Team.GENTIL)
 
-        message = bot.room_manager.send_to_village.call_args[0][0]
+        message = self._get_victory_message(bot)
         assert "👑" in message
         assert "💕" in message
 
@@ -299,7 +304,7 @@ class TestEndGameStats:
 
         await bot._announce_victory(Team.GENTIL)
 
-        message = bot.room_manager.send_to_village.call_args[0][0]
+        message = self._get_victory_message(bot)
         assert "📜" not in message
 
 

@@ -170,9 +170,26 @@ Cet exemple montre:
 
 1. **SETUP** - Ajouter joueurs et configurer rôles
 2. **NIGHT** - Actions nocturnes (loups, voyante, etc.)
+   - Les loups votent jusqu'à la **deadline** (par défaut 05h00)
+   - La **Sorcière** est notifiée à la deadline (ou plus tôt si tous les loups ont voté) et dispose d'au moins **3 heures** pour agir
 3. **DAY** - Discussion
 4. **VOTE** - Vote pour éliminer
 5. Retour à la nuit ou **ENDED** si victoire
+
+## ⏰ Configuration des horaires
+
+| Variable d'environnement | Défaut | Description |
+|--------------------------|--------|-------------|
+| `NIGHT_START_HOUR` | `21` | Heure de début de la nuit |
+| `DAY_START_HOUR` | `8` | Heure de début du jour |
+| `VOTE_START_HOUR` | `19` | Heure de début du vote |
+| `SORCIERE_MIN_HOURS` | `3` | Heures minimum garanties à la Sorcière |
+| `GAME_MAX_DURATION_DAYS` | `7` | Durée maximale de la partie en jours |
+| `GAME_START_DAY` | `6` | Jour de lancement (0=Lundi … 6=Dimanche) |
+| `GAME_START_HOUR` | `12` | Heure de lancement |
+
+**Deadline des loups** : calculée automatiquement comme `DAY_START_HOUR - SORCIERE_MIN_HOURS`.
+Avec les valeurs par défaut : 08h - 3h = **05h00**. Les loups peuvent voter de 21h à 05h (8h), la Sorcière a de 05h à 08h (3h garanties).
 
 ## 📚 Documentation
 

@@ -207,13 +207,17 @@ class UIBuildersMixin:
         message += f"• `{p}joueurs` — Voir la liste des joueurs (vivants/morts)\n"
         message += f"• `{p}leaderboard` / `{p}top` — Voir le classement\n"
         message += f"• `{p}stats` — Voir ses propres statistiques\n"
-        message += f"• `{p}roles` — Voir les statistiques par rôle\n"
+        message += f"• `{p}roles` — Voir les statistiques par rôle [DEPRECIE]\n"
+        message += f"• `{p}roles` — Voir la liste des rôles [WIP]\n"
         message += "\n"
 
         # Commandes de vote (village)
         message += "🗳️ **Commandes de vote** (salon du village) :\n"
         message += f"• `{p}vote {{pseudo}}` — Voter pour éliminer quelqu'un (phase de vote)\n"
+        message += f"• `{p}votes` — Voir les votes en cours (phase de vote) [WIP]\n"
         message += f"• `{p}vote-maire {{pseudo}}` — Voter pour un candidat maire (après la 1ère nuit)\n"
+        message += f"• `{p}votes-maire` — Voir les votes du maire (après la 1ère nuit) [WIP]\n"
+        message += f"• `{p}roles` — Voir la liste des rôles dans la partie [WIP]\n"
         message += "\n"
 
         # Commandes des loups (salon des loups)

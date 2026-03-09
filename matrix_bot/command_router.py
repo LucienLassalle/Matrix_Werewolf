@@ -358,6 +358,11 @@ class CommandRouterMixin:
                 and self.game_manager.can_vote_mayor()):
                 await self._check_mayor_election_progress()
 
+            # Après !cupidon réussi, créer immédiatement le salon du couple
+            # et notifier les amoureux (ils se "réveillent" pendant la nuit)
+            if result.get('success') and command == 'cupidon':
+                await self._create_couple_room_if_needed()
+
             # Après !lg, vérifier si le Loup Voyant doit rejoindre le salon
             if result.get('success') and command == 'lg':
                 await self._check_loup_voyant_room()

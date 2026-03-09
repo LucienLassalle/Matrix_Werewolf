@@ -69,3 +69,9 @@ class LoupVoyant(Role):
         living_wolves = game.get_living_wolves()
         if len(living_wolves) == 1 and self.player in living_wolves:
             self._can_vote_with_pack = True
+
+    def get_state(self) -> dict:
+        return {'_can_vote_with_pack': self._can_vote_with_pack}
+
+    def restore_state(self, data: dict, players: dict):
+        self._can_vote_with_pack = data.get('_can_vote_with_pack', False)

@@ -17,9 +17,14 @@ Exemples d'utilisation :
     # Forcer le lancement immédiat de la partie
     python admin_cli.py force-start
 
+    # Tuer un joueur en cours de partie (admin)
+    python admin_cli.py kill "@alice:matrix.org"
+    python admin_cli.py kill "@alice:matrix.org" -r "AFK"
+
     # Via Docker :
     docker exec werewolf-bot python admin_cli.py list
     docker exec werewolf-bot python admin_cli.py force-start
+    docker exec werewolf-bot python admin_cli.py kill "@alice:matrix.org"
 """
 
 import argparse
@@ -35,6 +40,9 @@ DEFAULT_DB = os.getenv("WEREWOLF_DB_PATH", "werewolf_game.db")
 
 # Fichier sentinelle pour signaler un lancement immédiat au bot
 FORCE_START_SIGNAL = os.getenv("FORCE_START_SIGNAL", "force_start.signal")
+
+# Fichier sentinelle pour signaler un kill admin au bot
+KILL_SIGNAL = os.getenv("KILL_SIGNAL", "kill.signal")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -152,6 +160,46 @@ def cmd_cancel_force(args):
         print("ℹ  Aucun signal en attente.")
 
 
+def cmd_kill(args):
+    """Envoie un signal pour tuer un joueur (admin force-kill en cours de partie)."""
+    user_id = args.user_id
+    signal_path = Path(args.kill_signal)
+
+    # Vérifier que le joueur est bien dans la partie active
+    conn = _get_db(args.db)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS current_game (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    conn.commit()
+
+    # Écrire le signal
+    import json
+    payload = {
+        "user_id": user_id,
+        "reason": args.reason or "Tué par un administrateur",
+        "timestamp": datetime.now().isoformat(),
+    }
+    signal_path.write_text(json.dumps(payload))
+    conn.close()
+
+    print(f"💀 Signal de kill envoyé pour {user_id}.")
+    print(f"   Raison : {payload['reason']}")
+    print("   Le bot traitera le kill au prochain cycle de vérification (≤ 30 s).")
+
+
+def cmd_cancel_kill(args):
+    """Annule un signal de kill en attente."""
+    signal_path = Path(args.kill_signal)
+    if signal_path.exists():
+        signal_path.unlink()
+        print("❌ Signal de kill annulé.")
+    else:
+        print("ℹ  Aucun signal de kill en attente.")
+
+
 # ── Argument parser ───────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -166,6 +214,9 @@ def build_parser() -> argparse.ArgumentParser:
             "  python admin_cli.py list\n"
             "  python admin_cli.py force-start\n"
             "  python admin_cli.py cancel-force\n"
+            '  python admin_cli.py kill "@alice:matrix.org"          # kill admin\n'
+            '  python admin_cli.py kill "@alice:matrix.org" -r "AFK" # kill avec raison\n'
+            "  python admin_cli.py cancel-kill\n"
         ),
     )
     parser.add_argument(
@@ -175,6 +226,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--signal", default=FORCE_START_SIGNAL,
         help=f"Chemin du fichier sentinelle force-start (défaut : {FORCE_START_SIGNAL})",
+    )
+    parser.add_argument(
+        "--kill-signal", default=KILL_SIGNAL,
+        help=f"Chemin du fichier sentinelle kill (défaut : {KILL_SIGNAL})",
     )
 
     sub = parser.add_subparsers(dest="command", required=True)
@@ -202,6 +257,17 @@ def build_parser() -> argparse.ArgumentParser:
     # cancel-force
     p_cf = sub.add_parser("cancel-force", help="Annuler un force-start en attente")
     p_cf.set_defaults(func=cmd_cancel_force)
+
+    # kill
+    p_kill = sub.add_parser("kill", help="Tuer un joueur (admin) pendant une partie")
+    p_kill.add_argument("user_id", help='Matrix ID du joueur à tuer (ex: "@alice:matrix.org")')
+    p_kill.add_argument("--reason", "-r", default=None,
+                        help="Raison du kill (optionnel)")
+    p_kill.set_defaults(func=cmd_kill)
+
+    # cancel-kill
+    p_ck = sub.add_parser("cancel-kill", help="Annuler un kill en attente")
+    p_ck.set_defaults(func=cmd_cancel_kill)
 
     return parser
 
