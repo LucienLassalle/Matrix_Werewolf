@@ -29,14 +29,8 @@ class Voleur(Role):
     
     def get_description(self) -> str:
         p = os.getenv('COMMAND_PREFIX', '!')
-        return ("Voleur - La première nuit, vous pouvez :\n"
-                f"• Tirer 2 cartes non-utilisées et en choisir une "
-                f"({p}voleur-tirer puis {p}voleur-choisir 1 ou 2)\n"
-                f"• Échanger votre rôle avec celui d'un autre joueur "
-                f"({p}voleur-echange {{pseudo}})\n"
-                "• Ne rien faire et rester Voleur (comme un Villageois)\n\n"
-                "Si vous tirez 2 cartes sans choisir, la première vous sera "
-                "automatiquement attribuée.")
+        return ("Voleur - La première nuit, vous pouvez soit tirer 2 cartes non-utilisées et en choisir une, "
+        "soit échanger votre rôle avec celui d'un autre joueur, soit ne rien faire et rester Voleur (équivalent Villageois).\n\n")
     
     def can_act_at_night(self) -> bool:
         return not self.has_used_power
