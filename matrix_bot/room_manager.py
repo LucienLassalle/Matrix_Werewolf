@@ -110,10 +110,11 @@ class RoomManager:
         if self.dead_room:
             await self.client.invite_user(self.dead_room, user_id)
     
-    async def send_to_village(self, message: str):
-        """Envoie un message dans le salon du village."""
+    async def send_to_village(self, message: str) -> Optional[str]:
+        """Envoie un message dans le salon du village. Retourne l'event_id."""
         if self.village_room:
-            await self.client.send_message(self.village_room, message, formatted=True)
+            return await self.client.send_message(self.village_room, message, formatted=True)
+        return None
     
     async def send_to_wolves(self, message: str):
         """Envoie un message dans le salon des loups."""

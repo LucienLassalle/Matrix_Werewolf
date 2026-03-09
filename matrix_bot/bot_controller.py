@@ -594,9 +594,11 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
         if self.message_handler:
             self.message_handler.village_room_id = self.room_manager.village_room
         
-        # Annoncer dans le village avec la liste des rôles
+        # Annoncer dans le village avec la liste des rôles et épingler le message
         roles_message = self._build_roles_announcement()
-        await self.room_manager.send_to_village(roles_message)
+        roles_event_id = await self.room_manager.send_to_village(roles_message)
+        if roles_event_id and self.room_manager.village_room:
+            await self.client.pin_message(self.room_manager.village_room, roles_event_id)
 
         # Annoncer l'ordre d'assise (cercle) — utile pour le Montreur d'Ours
         seating_message = self._build_seating_message()

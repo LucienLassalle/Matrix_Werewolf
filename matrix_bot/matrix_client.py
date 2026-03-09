@@ -290,7 +290,7 @@ class MatrixClientWrapper:
         except Exception as e:
             logger.error(f"Erreur retrait du space: {e}")
     
-    async def send_message(self, room_id: str, message: str, formatted: bool = False) -> bool:
+    async def send_message(self, room_id: str, message: str, formatted: bool = False) -> Optional[str]:
         """
         Envoie un message dans un salon.
         
@@ -300,11 +300,11 @@ class MatrixClientWrapper:
             formatted: Si True, utilise le formatage HTML
             
         Returns:
-            True si le message a été envoyé avec succès, False sinon.
+            L'event_id du message envoyé, ou None en cas d'erreur.
         """
         if not self.client:
             logger.error("Client non connecté")
-            return False
+            return None
         
         try:
             content = {
@@ -335,16 +335,16 @@ class MatrixClientWrapper:
             # Vérifier la réponse
             if hasattr(response, 'event_id'):
                 logger.debug(f"✅ Message envoyé dans {room_id} (event: {response.event_id})")
-                return True
+                return response.event_id
             else:
                 logger.error(
                     f"❌ Échec envoi message dans {room_id}: {response}"
                 )
-                return False
+                return None
             
         except Exception as e:
             logger.error(f"❌ Exception envoi message dans {room_id}: {e}")
-            return False
+            return None
     
     async def send_dm(self, user_id: str, message: str) -> bool:
         """
@@ -387,14 +387,14 @@ class MatrixClientWrapper:
             # 4. Envoyer le message
             if dm_room:
                 self._dm_rooms[user_id] = dm_room
-                success = await self.send_message(dm_room, message, formatted=True)
-                if success:
+                event_id = await self.send_message(dm_room, message, formatted=True)
+                if event_id:
                     logger.info(f"📩 DM → {user_id}: message envoyé ✅ (room={dm_room}, len={len(message)})")
                 else:
                     logger.error(f"📩 DM → {user_id}: send_message a ÉCHOUÉ dans room={dm_room}")
                     # Invalider le cache, le salon est peut-être inaccessible
                     self._dm_rooms.pop(user_id, None)
-                return success
+                return bool(event_id)
             else:
                 logger.error(f"📩 DM → {user_id}: IMPOSSIBLE d'obtenir un salon DM")
                 return False
@@ -635,3 +635,41 @@ class MatrixClientWrapper:
             
         except Exception as e:
             logger.error(f"Erreur modification power level: {e}")
+    
+    async def pin_message(self, room_id: str, event_id: str):
+        """
+        Épingle un message dans un salon.
+        
+        Args:
+            room_id: ID du salon
+            event_id: ID de l'événement à épingler
+        """
+        if not self.client:
+            logger.error("Client non connecté")
+            return
+        
+        try:
+            # Récupérer les messages déjà épinglés
+            pinned = []
+            try:
+                response = await self.client.room_get_state_event(
+                    room_id, "m.room.pinned_events"
+                )
+                if hasattr(response, 'content') and 'pinned' in response.content:
+                    pinned = response.content['pinned']
+            except Exception:
+                pass  # Pas encore de messages épinglés
+            
+            # Ajouter le nouveau message en tête
+            if event_id not in pinned:
+                pinned.insert(0, event_id)
+            
+            await self.client.room_put_state(
+                room_id,
+                "m.room.pinned_events",
+                {"pinned": pinned}
+            )
+            logger.info(f"📌 Message {event_id} épinglé dans {room_id}")
+            
+        except Exception as e:
+            logger.error(f"Erreur épinglage message dans {room_id}: {e}")
