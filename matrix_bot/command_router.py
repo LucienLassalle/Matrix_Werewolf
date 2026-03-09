@@ -209,8 +209,68 @@ class CommandRouterMixin:
             return {'success': True}
 
         if command == 'roles':
-            message = self.leaderboard_manager.get_role_stats_message()
+            if self.game_manager.phase in (GamePhase.SETUP, GamePhase.ENDED):
+                await self.client.send_message(
+                    room_id,
+                    "❌ Aucune partie en cours. Les rôles ne sont pas encore distribués.",
+                    formatted=True
+                )
+                return {'success': False, 'error': 'Pas de partie en cours'}
+            if room_id != self.lobby_room_id:
+                await self.client.send_message(
+                    room_id,
+                    f"❌ Utilisez `{self.command_prefix}roles` dans le **salon général**.",
+                    formatted=True
+                )
+                return {'success': False, 'error': 'Mauvais salon'}
+            message = self._build_roles_list_message()
             await self.client.send_message(room_id, message, formatted=True)
+            return {'success': True}
+
+        if command == 'votes':
+            if self.game_manager.phase != GamePhase.VOTE:
+                await self.client.send_message(
+                    room_id,
+                    "❌ Ce n'est pas la phase de vote.",
+                    formatted=True
+                )
+                return {'success': False, 'error': 'Phase incorrecte'}
+            if not self.room_manager.is_village_room(room_id):
+                await self.client.send_message(
+                    room_id,
+                    f"❌ Utilisez `{self.command_prefix}votes` dans le **salon du village**.",
+                    formatted=True
+                )
+                return {'success': False, 'error': 'Mauvais salon'}
+            summary = self.game_manager.vote_manager.get_vote_summary()
+            await self.client.send_message(
+                room_id,
+                f"📊 **Votes en cours :**\n\n{summary}",
+                formatted=True
+            )
+            return {'success': True}
+
+        if command == 'votes-maire':
+            if not self.game_manager.can_vote_mayor():
+                await self.client.send_message(
+                    room_id,
+                    "❌ L'élection du maire n'est pas en cours.",
+                    formatted=True
+                )
+                return {'success': False, 'error': 'Élection non disponible'}
+            if not self.room_manager.is_village_room(room_id):
+                await self.client.send_message(
+                    room_id,
+                    f"❌ Utilisez `{self.command_prefix}votes-maire` dans le **salon du village**.",
+                    formatted=True
+                )
+                return {'success': False, 'error': 'Mauvais salon'}
+            summary = self.game_manager.vote_manager.get_mayor_vote_summary()
+            await self.client.send_message(
+                room_id,
+                f"👑 **Votes pour le maire :**\n\n{summary}",
+                formatted=True
+            )
             return {'success': True}
 
         # Commande aide — liste de toutes les commandes

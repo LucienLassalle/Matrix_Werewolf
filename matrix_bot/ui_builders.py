@@ -193,6 +193,28 @@ class UIBuildersMixin:
 
         return message
 
+    def _build_roles_list_message(self: 'WerewolfBot') -> str:
+        """Construit la liste des rôles en jeu (sans révéler qui a quel rôle)."""
+        summary = self.game_manager.get_roles_summary()
+        if not summary:
+            return "🎭 Aucun rôle distribué."
+
+        message = "🎭 **Rôles en jeu :**\n\n"
+        for rt, info in sorted(summary.items(), key=lambda x: x[0].value):
+            team = info['team']
+            if team == Team.MECHANT:
+                emoji = "🐺"
+            elif team == Team.GENTIL:
+                emoji = "🏠️"
+            elif team == Team.COUPLE:
+                emoji = "💕"
+            else:
+                emoji = "❓"
+            message += f"{emoji} **{info['name']}** ×{info['count']}\n"
+            message += f"   {info['description']}\n\n"
+
+        return message
+
     def _build_help_message(self: 'WerewolfBot') -> str:
         """Construit le message d'aide avec toutes les commandes disponibles."""
         p = self.command_prefix
@@ -207,17 +229,15 @@ class UIBuildersMixin:
         message += f"• `{p}joueurs` — Voir la liste des joueurs (vivants/morts)\n"
         message += f"• `{p}leaderboard` / `{p}top` — Voir le classement\n"
         message += f"• `{p}stats` — Voir ses propres statistiques\n"
-        message += f"• `{p}roles` — Voir les statistiques par rôle [DEPRECIE]\n"
-        message += f"• `{p}roles` — Voir la liste des rôles [WIP]\n"
+        message += f"• `{p}roles` — Voir la liste des rôles en jeu (salon général)\n"
         message += "\n"
 
         # Commandes de vote (village)
         message += "🗳️ **Commandes de vote** (salon du village) :\n"
         message += f"• `{p}vote {{pseudo}}` — Voter pour éliminer quelqu'un (phase de vote)\n"
-        message += f"• `{p}votes` — Voir les votes en cours (phase de vote) [WIP]\n"
+        message += f"• `{p}votes` — Voir les votes en cours (phase de vote)\n"
         message += f"• `{p}vote-maire {{pseudo}}` — Voter pour un candidat maire (après la 1ère nuit)\n"
-        message += f"• `{p}votes-maire` — Voir les votes du maire (après la 1ère nuit) [WIP]\n"
-        message += f"• `{p}roles` — Voir la liste des rôles dans la partie [WIP]\n"
+        message += f"• `{p}votes-maire` — Voir les votes du maire (après la 1ère nuit)\n"
         message += "\n"
 
         # Commandes des loups (salon des loups)
