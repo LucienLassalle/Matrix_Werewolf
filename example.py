@@ -78,9 +78,9 @@ def main():
     
     if result["results"]["deaths"]:
         for dead in result["results"]["deaths"]:
-            print(f"💀 {dead.pseudo} est mort cette nuit")
+            print(f"💀 {dead.pseudo} est mort.e cette nuit")
     else:
-        print("✓ Personne n'est mort cette nuit")
+        print("✓ Personne n'est mort.e cette nuit")
     
     print(f"\n=== Phase: {game.phase.value} ===")
     
@@ -105,7 +105,7 @@ def main():
     result = game.end_vote_phase()
     
     if result.get("eliminated"):
-        print(f"💀 {result['eliminated'].pseudo} a été éliminé")
+        print(f"💀 {result['eliminated'].pseudo} a été éliminé.e")
     
     # Afficher l'état du jeu
     print("\n=== État de la partie ===")
@@ -117,7 +117,7 @@ def main():
     
     print("\n=== Joueurs ===")
     for player_info in state['players']:
-        status = "Vivant" if player_info['is_alive'] else "Mort"
+        status = "Vivant.e" if player_info['is_alive'] else "Mort.e"
         mayor = " 👑" if player_info['is_mayor'] else ""
         print(f"- {player_info['pseudo']}: {player_info['role']} ({status}){mayor}")
     

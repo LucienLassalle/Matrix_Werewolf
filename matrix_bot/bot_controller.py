@@ -503,7 +503,7 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
                     continue
 
                 if not player.is_alive:
-                    logger.warning("kill.signal: joueur %s déjà mort", user_id)
+                    logger.warning("kill.signal: joueur %s déjà mort.e.", user_id)
                     continue
 
                 logger.info("💀 Admin kill: %s (%s) — %s", player.display_name, user_id, reason)

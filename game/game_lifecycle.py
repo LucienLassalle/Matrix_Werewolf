@@ -186,7 +186,7 @@ class GameLifecycleMixin:
             if dead.is_mayor:
                 dead.is_mayor = False
                 self._pending_mayor_succession = dead
-                self.log(f"Le maire {dead.pseudo} est mort ! Succession nécessaire.")
+                self.log(f"Le maire {dead.pseudo} est mort.e ! Succession nécessaire.")
                 break
 
         return dead_players

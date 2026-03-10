@@ -213,28 +213,43 @@ class RoleHandlersMixin:
             f"Il doit désigner son successeur parmi les vivants..."
         )
 
+        # Calculer le timeout : temps jusqu'à la prochaine transition de phase
+        remaining = self.scheduler.get_time_until_next_phase()
+        if remaining is None:
+            timeout_seconds = 300  # Fallback 5 minutes
+        else:
+            # Au minimum 60 secondes pour être fair
+            timeout_seconds = max(60, remaining.total_seconds())
+
+        minutes = int(timeout_seconds // 60)
+        if minutes >= 60:
+            hours = round(minutes / 60)
+            time_str = f"{hours} heure{'s' if hours > 1 else ''}"
+        else:
+            time_str = f"{minutes} minute{'s' if minutes > 1 else ''}"
+
         # DM au maire mort avec la liste des vivants
         living = self.game_manager.get_living_players()
         living_list = ", ".join(f"**{p.pseudo}**" for p in living)
         await self.client.send_dm(
             dead_mayor.user_id,
-            f"👑 **Vous êtes mort en tant que maire.**\n\n"
+            f"👑 **Vous êtes mort.e en tant que maire.**\n\n"
             f"Désignez votre successeur avec `{self.command_prefix}maire {{pseudo}}`.\n\n"
             f"Joueurs vivants : {living_list}\n\n"
-            f"⏰ Vous avez **60 secondes** pour choisir, sinon un successeur sera désigné au hasard."
+            f"⏰ Vous avez **{time_str}** pour choisir, sinon un successeur sera désigné au hasard."
         )
 
         # Lancer le timeout
         if self._mayor_succession_task and not self._mayor_succession_task.done():
             self._mayor_succession_task.cancel()
         self._mayor_succession_task = asyncio.create_task(
-            self._mayor_succession_timeout()
+            self._mayor_succession_timeout(timeout_seconds)
         )
 
-    async def _mayor_succession_timeout(self: WerewolfBot):
-        """Timeout de 60 secondes pour la succession du maire."""
+    async def _mayor_succession_timeout(self: WerewolfBot, timeout_seconds: float = 300):
+        """Timeout pour la succession du maire (jusqu'à la prochaine phase)."""
         try:
-            await asyncio.sleep(60)
+            await asyncio.sleep(timeout_seconds)
         except asyncio.CancelledError:
             return
 
@@ -292,7 +307,7 @@ class RoleHandlersMixin:
 
                 await self.client.send_dm(
                     player.user_id,
-                    f"💀 **Vous êtes mort !** Mais en tant que Chasseur, "
+                    f"💀 **Vous êtes mort.e !** Mais en tant que Chasseur, "
                     f"vous pouvez tirer une dernière balle.\n\n"
                     f"Utilisez `{self.command_prefix}tuer {{pseudo}}` pour viser quelqu'un.\n\n"
                     f"Joueurs vivants : {living_list}\n\n"
@@ -430,14 +445,13 @@ class RoleHandlersMixin:
                     msg = (
                         f"⚡ **{dead.display_name}** a été foudroyé par les dieux !\n"
                         f"Son rôle était : **{dead.role.name}**\n"
-                        f"_({reason})_"
                     )
                     self._game_events.append(
                         f"⚡ **{dead.display_name}** foudroyé par les dieux ({dead.role.name})"
                     )
             else:
                 msg = (
-                    f"💀 **{dead.display_name}** est mort !\n"
+                    f"💀 **{dead.display_name}** est mort.e !\n"
                     f"Son rôle était : **{dead.role.name}**"
                 )
 

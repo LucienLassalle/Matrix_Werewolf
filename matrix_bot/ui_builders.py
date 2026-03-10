@@ -253,7 +253,7 @@ class UIBuildersMixin:
         message += f"• `{p}garde {{pseudo}}` — Protéger un joueur cette nuit (Garde)\n"
         message += f"• `{p}cupidon {{pseudo1}} {{pseudo2}}` — Marier deux joueurs (Cupidon, nuit 1)\n"
         message += f"• `{p}enfant {{pseudo}}` — Choisir un mentor (Enfant Sauvage, nuit 1)\n"
-        message += f"• `{p}medium {{pseudo}}` — Communiquer avec un mort (Médium)\n"
+        message += f"• `{p}medium {{pseudo}}` — Communiquer avec un.e joueur.se mort.e (Médium)\n"
         message += f"• `{p}corbeau` / `{p}curse` `{{pseudo}}` — Maudire un joueur (+2 votes, Corbeau)\n"
         message += f"• `{p}lg` — Abandonner la voyance et rejoindre la meute (Loup Voyant)\n"
         message += f"• `{p}convertir` — Convertir la cible des loups en loup (Loup Noir, 1 fois)\n"

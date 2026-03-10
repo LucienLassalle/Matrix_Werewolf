@@ -35,13 +35,13 @@ class VoteManager:
     def cast_vote(self, voter: Player, target: Player, is_wolf_vote: bool = False) -> dict:
         """Enregistre un vote (village ou loup)."""
         if not voter.is_alive:
-            return {"success": False, "message": "Vous êtes mort, vous ne pouvez pas voter"}
+            return {"success": False, "message": "Vous êtes mort.e, vous ne pouvez pas voter"}
         
         if not voter.can_vote and not is_wolf_vote:
             return {"success": False, "message": "Vous n'avez pas le droit de vote"}
         
         if not target.is_alive:
-            return {"success": False, "message": "Vous ne pouvez pas voter pour quelqu'un de mort"}
+            return {"success": False, "message": "Vous ne pouvez pas voter pour quelqu'un de mort.e"}
         
         self._cache_player(voter)
         self._cache_player(target)
@@ -56,11 +56,11 @@ class VoteManager:
     def cast_mayor_vote_for(self, voter: Player, target: Player) -> dict:
         """Enregistre un vote POUR un candidat à l'élection du maire."""
         if not voter.is_alive:
-            return {"success": False, "message": "Vous êtes mort, vous ne pouvez pas voter"}
+            return {"success": False, "message": "Vous êtes mort.e, vous ne pouvez pas voter"}
         if not voter.can_vote:
             return {"success": False, "message": "Vous n'avez pas le droit de vote"}
         if not target.is_alive:
-            return {"success": False, "message": "Vous ne pouvez pas voter pour quelqu'un de mort"}
+            return {"success": False, "message": "Vous ne pouvez pas voter pour quelqu'un de mort.e"}
         
         self._cache_player(voter)
         self._cache_player(target)

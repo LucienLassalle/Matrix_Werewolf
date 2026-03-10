@@ -57,7 +57,7 @@ class CommandHandler:
             is_maire_succession = (command == "maire"
                                    and self.game._pending_mayor_succession == player)
             if not is_chasseur_tuer and not is_maire_succession:
-                return {"success": False, "message": "Vous êtes mort"}
+                return {"success": False, "message": "Vous êtes mort.e"}
         
         handler = self.commands.get(command)
         if not handler:

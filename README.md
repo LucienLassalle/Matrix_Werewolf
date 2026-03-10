@@ -135,7 +135,7 @@ Les clients Matrix mobiles réservent `/` pour leurs propres commandes — utili
 | `!voyante {pseudo}` | Voyante | Voit un rôle |
 | `!lg` | Loup Voyant | Devient loup normal |
 | `!enfant {pseudo}` | Enfant Sauvage | Choisit mentor |
-| `!medium {pseudo}` | Médium | Parle avec un mort |
+| `!medium {pseudo}` | Médium | Parle avec un.e mort.e |
 | `!garde {pseudo}` | Garde | Protège quelqu'un |
 
 ## 🧪 Tests

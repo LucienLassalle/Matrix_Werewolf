@@ -169,7 +169,7 @@ class PhaseManagerMixin:
 
         if results["deaths"]:
             for dead in results["deaths"]:
-                self.log(f"{dead.pseudo} est mort cette nuit")
+                self.log(f"{dead.pseudo} est mort.e cette nuit")
                 self.mute_dead_player(dead.user_id)
                 if dead.role and dead.role.can_vote_with_wolves():
                     self.remove_wolf_from_room(dead.user_id)
@@ -181,10 +181,10 @@ class PhaseManagerMixin:
                 if dead.is_mayor:
                     dead.is_mayor = False
                     self._pending_mayor_succession = dead
-                    self.log(f"Le maire {dead.pseudo} est mort ! Succession nécessaire.")
+                    self.log(f"Le maire {dead.pseudo} est mort.e ! Succession nécessaire.")
                     break
         else:
-            self.log("Personne n'est mort cette nuit")
+            self.log("Personne n'est mort.e cette nuit")
 
         winner = self.check_win_condition()
         if winner:

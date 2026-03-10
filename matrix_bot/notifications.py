@@ -65,7 +65,7 @@ class NotificationManager:
     
     async def send_death_notification(self, user_id: str, role: Role):
         """Notifie un joueur de sa mort et de son passage en mode spectateur."""
-        message = "💀 **Vous êtes mort !**\n\n"
+        message = "💀 **Vous êtes mort.e !**\n\n"
         
         # Message spécial pour le chasseur
         if role.name == "Chasseur":
@@ -210,7 +210,7 @@ class NotificationManager:
             "Petite Fille": ["Espionner les loups (passif — vous recevez leurs messages en DM)"],
             "Montreur d'Ours": ["L'ours grogne automatiquement au réveil si un loup est voisin"],
             "Corbeau": [f"Ajouter 2 votes contre quelqu'un pour le vote du lendemain (`{p}corbeau {{pseudo}}`)"],
-            "Médium": [f"Communiquer avec un joueur mort (`{p}medium {{pseudo}}`)"],
+            "Médium": [f"Communiquer avec un.e joueur.se mort.e (`{p}medium {{pseudo}}`)"],
             "Enfant Sauvage": [f"Choisir un mentor la première nuit (`{p}enfant {{pseudo}}`)"],
             "Voleur": [
                 f"Tirer 2 cartes (`{p}voleur-tirer`)",
@@ -264,7 +264,7 @@ class NotificationManager:
             "Enfant Sauvage": [f"`{p}enfant {{pseudo}}` — Choisir un mentor (nuit 1)"],
             "Mercenaire": ["Pas de commande — votre cible vous est assignée automatiquement"],
             "Mentaliste": ["Pas de commande — le résultat du vote vous est communiqué automatiquement"],
-            "Médium": [f"`{p}medium {{pseudo}}` — Communiquer avec un mort (la nuit)"]
+            "Médium": [f"`{p}medium {{pseudo}}` — Communiquer avec un.e joueur.se mort.e (la nuit)"]
         }
         
         if role.name in role_commands:
@@ -382,7 +382,7 @@ class NotificationManager:
                 "💡 Choisissez quelqu'un qui a des chances de survivre longtemps."
             ),
             "Médium": (
-                "🔮 Chaque nuit, vous pouvez communiquer avec un joueur mort.\n"
+                "🔮 Chaque nuit, vous pouvez communiquer avec un.e joueur.se mort.e.\n"
                 f"Exemple : `{p}medium Alice` (en DM).\n"
                 "💡 Les morts connaissent les rôles de tous — ils peuvent "
                 "vous donner des informations précieuses !"

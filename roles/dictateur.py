@@ -79,7 +79,7 @@ class Dictateur(Role):
                     # Le Dictateur est mort en cascade (amoureux)
                     return {
                         "success": True,
-                        "message": f"Vous avez éliminé {target.pseudo}, un loup ! Mais vous êtes mort de chagrin...",
+                        "message": f"Vous avez éliminé {target.pseudo}, un loup ! Mais vous êtes mort.e de chagrin...",
                         "became_mayor": False,
                         "target": target,
                         "deaths": dead
