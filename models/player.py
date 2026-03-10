@@ -23,6 +23,7 @@ class Player:
         self.mentor: Optional['Player'] = None  # Pour l'enfant sauvage
         self.target: Optional['Player'] = None  # Pour le mercenaire
         self.messages_today: list[str] = []  # Pour le loup bavard
+        self.original_role_name: Optional[str] = None  # Rôle d'origine (si changé via Voleur)
         
     def __repr__(self):
         return f"Player({self.pseudo}, {self.role.role_type if self.role else 'No role'}, {'alive' if self.is_alive else 'dead'})"

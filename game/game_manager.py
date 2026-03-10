@@ -488,6 +488,8 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
                 player.can_vote = player_extra.get('can_vote', True)
                 if player_extra.get('display_name'):
                     player.display_name = player_extra['display_name']
+                if player_extra.get('original_role_name'):
+                    player.original_role_name = player_extra['original_role_name']
 
                 # Recréer le rôle
                 if p_data.get('role_type'):

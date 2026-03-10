@@ -763,6 +763,8 @@ class PhaseHandlersMixin:
                 extras.append("👑 Maire")
             if player.lover:
                 extras.append(f"💕 couple avec {player.lover.display_name}")
+            if player.original_role_name:
+                extras.append(f"🎭 ex-{player.original_role_name}")
             extra_str = f" ({', '.join(extras)})" if extras else ""
             message += f"{status} **{player.display_name}**: {player.role.name}{extra_str}\n"
 

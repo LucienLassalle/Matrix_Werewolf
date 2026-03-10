@@ -1,0 +1,11 @@
+services:
+  werewolf-bot:
+    build: .
+    container_name: werewolf-matrix-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    environment:
+      - TZ=Europe/Paris

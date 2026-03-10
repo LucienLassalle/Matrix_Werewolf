@@ -1,235 +1,252 @@
-# Werewolf Matrix Backend
+# Werewolf Matrix
 
-Backend complet pour le jeu du Loup-Garou, conçu pour être utilisé avec un bot Matrix.
+Bot Matrix pour jouer au **Loup-Garou** en temps réel sur un serveur [Matrix](https://matrix.org/).  
+Les parties se déroulent en asynchrone : les joueurs s'inscrivent, puis le bot gère automatiquement les phases de nuit, de jour et de vote selon un planning configurable.
 
-## 🎯 Fonctionnalités
+---
 
-- ✅ **24 rôles implémentés** (tous les rôles du todo.txt)
-- ✅ Gestion complète des phases (Nuit, Jour, Vote)
-- ✅ Système de votes et d'actions
-- ✅ Conditions de victoire multiples
-- ✅ Gestionnaire de commandes
-- ✅ Architecture modulaire et extensible
-- ✅ Tests unitaires complets
+## Fonctionnalités
 
-## 📁 Architecture
+- **24 rôles** jouables (Villageois, Loups, Voyante, Sorcière, Cupidon, Chasseur, Voleur, Dictateur, etc.)
+- Phases automatisées (Nuit → Jour → Vote) avec horaires configurables
+- Salons Matrix dédiés : lobby, village, loups, DMs privés pour les rôles spéciaux
+- Persistance complète en SQLite — reprise après redémarrage sans perte de données
+- Leaderboard et statistiques par joueur
+- Administration via CLI (`admin_cli.py`) ou directement dans Docker
+- Chronologie détaillée en fin de partie (journal de toutes les actions secrètes)
+
+---
+
+## Architecture
 
 ```
 Werewolf-Matrix/
-├── models/          # Modèles de données (Player, Role, Enums)
-├── roles/           # Implémentation de tous les rôles
-├── game/            # Logique du jeu (GameManager, VoteManager, ActionManager)
-├── commands/        # Gestionnaire de commandes
-├── utils/           # Utilitaires (helpers, formatters)
-├── tests/           # Tests unitaires
-├── example.py       # Exemple d'utilisation
-└── API.md          # Documentation complète de l'API
+├── main.py              # Point d'entrée du bot
+├── admin_cli.py         # CLI d'administration
+├── docker-compose.yml   # Déploiement Docker
+├── Dockerfile
+├── .env                 # Configuration (à créer)
+├── models/              # Player, Role, Enums
+├── roles/               # Implémentation des 24 rôles
+├── game/                # Moteur de jeu (GameManager, VoteManager, ActionManager)
+├── commands/            # Dispatch des commandes joueur
+├── matrix_bot/          # Intégration Matrix (client, rooms, scheduler, notifications)
+├── database/            # Persistance SQLite
+├── utils/               # Helpers divers
+└── tests/               # Tests unitaires
 ```
 
-## 🚀 Installation
+---
+
+## Déploiement avec Docker
+
+### Prérequis
+
+- **Docker** et **Docker Compose** installés
+- Un compte bot Matrix avec un **access token**
+- Un **Space Matrix** et un **salon lobby** déjà créés
+
+### 1. Cloner le dépôt
 
 ```bash
-# Cloner le repository
 git clone <repo_url>
 cd Werewolf-Matrix
+```
 
-# Créer un environnement virtuel (recommandé)
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# ou
-venv\Scripts\activate  # Windows
+### 2. Créer le fichier `.env`
 
-# Installer les dépendances
+```bash
+cp .env.example .env   # ou créer manuellement
+```
+
+Remplir les variables obligatoires :
+
+```env
+# ── Matrix (obligatoire) ──────────────────────────────
+MATRIX_HOMESERVER=https://matrix.monserveur.fr
+MATRIX_USER_ID=@loup-garou-bot:monserveur.fr
+MATRIX_ACCESS_TOKEN=syt_xxxxxxxxxxxxxxxxxxxxxxxx
+MATRIX_SPACE_ID=!abcdef:monserveur.fr
+MATRIX_LOBBY_ROOM_ID=!ghijkl:monserveur.fr
+
+# ── Matrix (optionnel) ────────────────────────────────
+MATRIX_PASSWORD=motdepasse          # Renouvellement auto du token
+
+# ── Préfixe des commandes ─────────────────────────────
+COMMAND_PREFIX=!                     # Défaut : !
+
+# ── Horaires de la partie ─────────────────────────────
+NIGHT_START_HOUR=21                  # Début de la nuit
+DAY_START_HOUR=8                     # Début du jour
+VOTE_START_HOUR=19                   # Début du vote
+SORCIERE_MIN_HOURS=3                 # Heures min garanties à la Sorcière
+GAME_MAX_DURATION_DAYS=7             # Durée max de la partie (jours)
+GAME_START_DAY=6                     # Jour de lancement (0=Lundi … 6=Dimanche)
+GAME_START_HOUR=12                   # Heure de lancement
+
+# ── Gameplay ──────────────────────────────────────────
+CUPIDON_WINS_WITH_COUPLE=true        # Cupidon gagne avec le couple
+LITTLE_GIRL_DISTORT_MESSAGES=true    # Messages loups altérés pour la Petite Fille
+MENTALISTE_ADVANCE_HOURS=2           # Heures avant fin de vote pour le Mentaliste
+```
+
+### 3. Lancer le bot
+
+```bash
+docker compose up -d
+```
+
+Le bot démarre, se connecte au serveur Matrix et attend les inscriptions dans le salon lobby.
+
+### 4. Vérifier les logs
+
+```bash
+docker compose logs -f werewolf-bot
+```
+
+### 5. Administration depuis Docker
+
+```bash
+# Lister les joueurs inscrits
+docker exec werewolf-matrix-bot python admin_cli.py list
+
+# Forcer le lancement immédiat de la partie
+docker exec werewolf-matrix-bot python admin_cli.py force-start
+
+# Ajouter un joueur manuellement
+docker exec werewolf-matrix-bot python admin_cli.py add "@alice:matrix.org" "Alice"
+
+# Retirer un joueur
+docker exec werewolf-matrix-bot python admin_cli.py remove "@alice:matrix.org"
+
+# Tuer un joueur en cours de partie (admin)
+docker exec werewolf-matrix-bot python admin_cli.py kill "@alice:matrix.org"
+docker exec werewolf-matrix-bot python admin_cli.py kill "@alice:matrix.org" -r "AFK"
+```
+
+### Mise à jour
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+---
+
+## Installation locale (développement)
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+python main.py
 ```
 
-## 💻 Utilisation rapide
-
-```python
-from game.game_manager import GameManager
-from models.enums import RoleType
-from commands.command_handler import CommandHandler
-
-# 1. Créer une partie
-game = GameManager()
-
-# 2. Ajouter des joueurs
-game.add_player("Alice", "user_id_1")
-game.add_player("Bob", "user_id_2")
-game.add_player("Charlie", "user_id_3")
-game.add_player("Diana", "user_id_4")
-
-# 3. Configurer les rôles
-game.set_roles({
-    RoleType.LOUP_GAROU: 1,
-    RoleType.VOYANTE: 1,
-    RoleType.VILLAGEOIS: 2
-})
-
-# 4. Démarrer la partie
-result = game.start_game()
-print(result["message"])
-
-# 5. Utiliser les commandes
-command_handler = CommandHandler(game)
-result = command_handler.execute_command(
-    user_id="user_id_1",
-    command="vote",
-    args=["Bob"]
-)
-print(result["message"])
-
-# 6. Passer d'une phase à l'autre
-game.end_night()
-game.start_vote_phase()
-game.end_vote_phase()
-```
-
-## 🎭 Rôles disponibles
-
-### Rôles de base
-- **Villageois** - Simple villageois
-- **Loup-Garou** - Vote pour tuer chaque nuit
-- **Voyante** - Voit les rôles
-- **Chasseur** - Tue quelqu'un en mourant
-- **Sorcière** - 2 potions (vie et mort)
-- **Cupidon** - Marie 2 personnes
-- **Petite Fille** - Observe les loups
-- **Voleur** - Échange ou tire des rôles
-
-### Loups avancés
-- **Loup-Voyant** - Voit les rôles
-- **Loup-Blanc** - Tue seul, gagne seul
-- **Loup-Noir** - Convertit en loup
-- **Loup-Bavard** - Doit dire un mot imposé
-
-### Villageois avancés
-- **Montreur d'Ours** - Son ours grogne près des loups
-- **Corbeau** - Ajoute 2 votes
-- **Idiot** - Gracié une fois
-- **Enfant Sauvage** - Devient loup si mentor meurt
-- **Médium** - Parle avec les morts
-- **Garde** - Protège quelqu'un
-- **Voyante d'Aura** - Voit l'équipe
-
-### Rôles spéciaux
-- **Mercenaire** - Doit faire tuer une cible
-- **Mentaliste** - Connaît l'issue du vote
-- **Dictateur** - Force un vote
-- **Maire** - Vote double
-
-## 🎮 Commandes disponibles
-
-Le préfixe des commandes est configurable via la variable `COMMAND_PREFIX` dans le fichier `.env` (par défaut `!`).
-Les clients Matrix mobiles réservent `/` pour leurs propres commandes — utilisez `!` ou un autre préfixe de votre choix.
-
-| Commande | Utilisation | Description |
-|----------|-------------|-------------|
-| `!vote {pseudo}` | Loups, Village | Vote pour éliminer |
-| `!tuer {pseudo}` | Chasseur, Dictateur, Loup Blanc | Tue quelqu'un |
-| `!cupidon {pseudo1} {pseudo2}` | Cupidon | Marie deux personnes |
-| `!sorciere-sauve {pseudo}` | Sorcière | Sauve la victime |
-| `!sorciere-tue {pseudo}` | Sorcière | Empoisonne |
-| `!voleur-echange {pseudo}` | Voleur | Échange de rôle |
-| `!voleur-tirer` | Voleur | Tire 2 rôles |
-| `!voyante {pseudo}` | Voyante | Voit un rôle |
-| `!lg` | Loup Voyant | Devient loup normal |
-| `!enfant {pseudo}` | Enfant Sauvage | Choisit mentor |
-| `!medium {pseudo}` | Médium | Parle avec un.e mort.e |
-| `!garde {pseudo}` | Garde | Protège quelqu'un |
-
-## 🧪 Tests
+### Tests
 
 ```bash
-# Lancer tous les tests
 pytest tests/ -v
-
-# Lancer un fichier de test spécifique
-pytest tests/test_game.py -v
-
-# Avec coverage
-pytest tests/ --cov=. --cov-report=html
 ```
 
-## 📖 Exemple complet
+---
 
-```bash
-# Lancer l'exemple
-python example.py
-```
+## Déroulement d'une partie
 
-Cet exemple montre:
-- Création d'une partie
-- Configuration des rôles
-- Déroulement d'une nuit
-- Utilisation des commandes
-- Vote et élimination
-- Vérification des conditions de victoire
+1. **Inscription** — Les joueurs tapent `!inscription` dans le lobby
+2. **Lancement** — Automatique selon `GAME_START_DAY` / `GAME_START_HOUR`, ou forcé par un admin
+3. **Nuit** — Les loups votent, les rôles spéciaux agissent en DM privé
+   - Deadline des loups : `DAY_START_HOUR - SORCIERE_MIN_HOURS` (par défaut **05h00**)
+   - La Sorcière est notifiée à la deadline et dispose d'au moins **3h** pour agir
+4. **Jour** — Discussion libre dans le salon du village
+5. **Vote** — Les joueurs votent pour éliminer quelqu'un
+6. Retour à la nuit, ou **fin de partie** si une équipe a gagné
 
-## 🔄 Workflow d'une partie
+---
 
-1. **SETUP** - Ajouter joueurs et configurer rôles
-2. **NIGHT** - Actions nocturnes (loups, voyante, etc.)
-   - Les loups votent jusqu'à la **deadline** (par défaut 05h00)
-   - La **Sorcière** est notifiée à la deadline (ou plus tôt si tous les loups ont voté) et dispose d'au moins **3 heures** pour agir
-3. **DAY** - Discussion
-4. **VOTE** - Vote pour éliminer
-5. Retour à la nuit ou **ENDED** si victoire
+## Rôles
 
-## ⏰ Configuration des horaires
+### Village
+| Rôle | Description |
+|------|-------------|
+| Villageois | Rôle de base, vote le jour |
+| Voleur | La première nuit, échange son rôle ou tire parmi des cartes non utilisées |
+| Voyante | Découvre le rôle d'un joueur chaque nuit |
+| Voyante d'Aura | Découvre l'équipe d'un joueur (Gentil/Méchant) |
+| Chasseur | Tire sur un joueur en mourant |
+| Sorcière | Possède une potion de vie et une potion de mort |
+| Cupidon | Lie deux joueurs amoureux (meurent ensemble) |
+| Garde | Protège un joueur de l'attaque des loups |
+| Médium | Communique avec un mort chaque nuit |
+| Petite Fille | Espionne les discussions des loups |
+| Montreur d'Ours | Son ours grogne si un loup est voisin |
+| Corbeau | Maudit un joueur (+2 votes contre lui) |
+| Idiot | Gracié la première fois qu'il est éliminé au vote |
+| Enfant Sauvage | Devient loup si son mentor meurt |
+| Mercenaire | Doit faire éliminer une cible pour gagner |
+| Mentaliste | Sait si le vote majoritaire vise un loup ou un villageois |
+| Dictateur | Peut forcer l'élimination d'un joueur (usage unique) |
 
-| Variable d'environnement | Défaut | Description |
-|--------------------------|--------|-------------|
-| `NIGHT_START_HOUR` | `21` | Heure de début de la nuit |
-| `DAY_START_HOUR` | `8` | Heure de début du jour |
-| `VOTE_START_HOUR` | `19` | Heure de début du vote |
-| `SORCIERE_MIN_HOURS` | `3` | Heures minimum garanties à la Sorcière |
-| `GAME_MAX_DURATION_DAYS` | `7` | Durée maximale de la partie en jours |
-| `GAME_START_DAY` | `6` | Jour de lancement (0=Lundi … 6=Dimanche) |
+### Loups
+| Rôle | Description |
+|------|-------------|
+| Loup-Garou | Vote chaque nuit pour tuer un villageois |
+| Loup-Voyant | Loup pouvant voir le rôle d'un joueur, puis rejoint la meute |
+| Loup-Blanc | Loup solitaire, doit être le dernier survivant |
+| Loup-Noir | Peut convertir la victime en loup au lieu de la tuer |
+| Loup-Bavard | Loup devant placer un mot imposé dans la discussion de jour |
+
+### Spécial
+| Rôle | Description |
+|------|-------------|
+| Maire | Élu par le village, son vote compte double |
+
+---
+
+## Commandes
+
+Le préfixe est configurable via `COMMAND_PREFIX` (défaut : `!`).  
+Les clients Matrix mobiles réservent `/` — utilisez `!` ou un autre préfixe.
+
+| Commande | Rôle | Description |
+|----------|------|-------------|
+| `!inscription` | Tous | S'inscrire à la prochaine partie |
+| `!vote {pseudo}` | Loups / Village | Voter pour éliminer un joueur |
+| `!tuer {pseudo}` | Chasseur, Dictateur, Loup Blanc | Tuer un joueur |
+| `!cupidon {p1} {p2}` | Cupidon | Lier deux joueurs |
+| `!sorciere-sauve {pseudo}` | Sorcière | Utiliser la potion de vie |
+| `!sorciere-tue {pseudo}` | Sorcière | Utiliser la potion de mort |
+| `!voyante {pseudo}` | Voyante / Voyante d'Aura | Observer un joueur |
+| `!garde {pseudo}` | Garde | Protéger un joueur |
+| `!medium {pseudo}` | Médium | Consulter un mort |
+| `!enfant {pseudo}` | Enfant Sauvage | Choisir un mentor |
+| `!corbeau {pseudo}` | Corbeau | Maudire un joueur |
+| `!voleur-echange {pseudo}` | Voleur | Échanger son rôle |
+| `!voleur-tirer` | Voleur | Tirer 2 cartes |
+| `!voleur-choisir {1\|2}` | Voleur | Choisir une carte tirée |
+| `!lg` | Loup Voyant | Rejoindre la meute |
+| `!convertir` | Loup Noir | Convertir la victime |
+| `!dictateur {pseudo}` | Dictateur | Forcer une élimination |
+| `!maire {pseudo}` | Maire (mourant) | Désigner un successeur |
+
+---
+
+## Configuration des horaires
+
+| Variable | Défaut | Description |
+|----------|--------|-------------|
+| `NIGHT_START_HOUR` | `21` | Début de la nuit |
+| `DAY_START_HOUR` | `8` | Début du jour |
+| `VOTE_START_HOUR` | `19` | Début du vote |
+| `SORCIERE_MIN_HOURS` | `3` | Heures min garanties à la Sorcière |
+| `GAME_MAX_DURATION_DAYS` | `7` | Durée max de la partie |
+| `GAME_START_DAY` | `6` | Jour de lancement (0=Lun … 6=Dim) |
 | `GAME_START_HOUR` | `12` | Heure de lancement |
 
-**Deadline des loups** : calculée automatiquement comme `DAY_START_HOUR - SORCIERE_MIN_HOURS`.
-Avec les valeurs par défaut : 08h - 3h = **05h00**. Les loups peuvent voter de 21h à 05h (8h), la Sorcière a de 05h à 08h (3h garanties).
+**Deadline des loups** = `DAY_START_HOUR - SORCIERE_MIN_HOURS`  
+Valeurs par défaut : 08h − 3h = **05h00**. Les loups votent de 21h à 05h, la Sorcière agit de 05h à 08h.
 
-## 📚 Documentation
-
-- `API.md` - Documentation complète de l'API
-- `todo.txt` - Liste des rôles et fonctionnalités
-- Docstrings dans chaque module
-
-## 🏗️ Intégration avec Matrix
-
-Le backend est prêt pour être intégré avec un bot Matrix. Il suffit de:
-
-1. Créer un bot Matrix
-2. Mapper les commandes Matrix aux commandes du backend
-3. Gérer les salons (salon public, salon loups, MPs)
-4. Utiliser `GameManager` et `CommandHandler`
-
-## 🤝 Contribution
-
-Le code suit les bonnes pratiques Python:
-- Type hints
-- Docstrings
-- Architecture modulaire
-- Tests unitaires
-- Séparation des responsabilités
+---
 
 ## 📝 License
 
-À définir
-
-## ✅ Todo pour intégration Matrix
-
-- [ ] Créer le bot Matrix
-- [ ] Mapper les commandes
-- [ ] Gérer les salons
-- [ ] Masquer les pseudos pour la petite fille
-- [ ] Interface boutons pour la sorcière
-- [ ] Interface boutons pour le voleur
-- [ ] Choix convert/manger pour loup noir
-- [ ] Vérification mot loup bavard
-- [ ] Grognement montreur d'ours
-- [ ] Salon médium avec emojis
-- [ ] Message mercenaire J1
-- [ ] Notification mentaliste
+GPLv3

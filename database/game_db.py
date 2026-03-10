@@ -181,6 +181,7 @@ class GameDatabase:
                     'mentor_user_id': player.mentor.user_id if player.mentor else None,
                     'role_state': player.role.get_state() if player.role else {},
                     'display_name': player.display_name,
+                    'original_role_name': player.original_role_name,
                 }
                 
                 cursor.execute("""

@@ -78,6 +78,7 @@ class Voleur(Role):
                     return {"success": False, "message": "Choix invalide (1 ou 2)"}
                 
                 chosen_role = self.drawn_roles[choice]
+                self.player.original_role_name = "Voleur"
                 chosen_role.assign_to_player(self.player)
                 self.has_used_power = True
                 
@@ -106,6 +107,10 @@ class Voleur(Role):
                 # Sauvegarder les rôles avant l'échange
                 voleur_role = self  # Le rôle Voleur actuel
                 target_role = target.role
+                
+                # Marquer les rôles d'origine avant l'échange
+                self.player.original_role_name = "Voleur"
+                target.original_role_name = target_role.name
                 
                 # Le Voleur reçoit le rôle de la cible
                 target_role.assign_to_player(self.player)
