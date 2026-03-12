@@ -30,7 +30,7 @@ class Voleur(Role):
     def get_description(self) -> str:
         p = os.getenv('COMMAND_PREFIX', '!')
         return ("Voleur - La première nuit, vous pouvez soit tirer 2 cartes non-utilisées et en choisir une, "
-        "soit échanger votre rôle avec celui d'un autre joueur, soit ne rien faire et rester Voleur (équivalent Villageois).\n\n")
+        "soit échanger votre rôle avec celui d'un autre joueur, soit ne rien faire et rester Voleur (équivalent Villageois).")
     
     def can_act_at_night(self) -> bool:
         return not self.has_used_power
