@@ -26,7 +26,11 @@ logger = logging.getLogger(__name__)
 async def main():
     """Fonction principale."""
     # Charger les variables d'environnement
-    load_dotenv()
+    # override=True : le fichier .env est toujours prioritaire sur les
+    # variables d'environnement déjà définies (ex: Docker env_file).
+    # Sans cela, modifier le .env puis redémarrer le container ne prend
+    # pas effet car Docker conserve les anciennes valeurs en mémoire.
+    load_dotenv(override=True)
     
     # Récupérer la configuration
     homeserver = os.getenv('MATRIX_HOMESERVER')
