@@ -268,4 +268,13 @@ class UIBuildersMixin:
         message += f"• `{p}dictateur {{pseudo}}` — Éliminer sans vote, de jour (Dictateur, 1 fois)\n"
         message += f"• `{p}maire {{pseudo}}` — Désigner un successeur (Maire mourant)\n"
 
+        # Rôles désactivés
+        if self.disabled_roles:
+            from models.role import ROLE_DISPLAY_NAMES
+            names = ', '.join(
+                ROLE_DISPLAY_NAMES.get(rt, rt.value)
+                for rt in sorted(self.disabled_roles, key=lambda r: r.value)
+            )
+            message += f"\n🚫 **Rôles désactivés :** {names}\n"
+
         return message

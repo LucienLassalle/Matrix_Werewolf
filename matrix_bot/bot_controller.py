@@ -53,7 +53,8 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
         test_user2_id: str = None,
         test_user2_password: str = None,
         test_user2_token: str = None,
-        runtests: bool = False
+        runtests: bool = False,
+        disabled_roles: set = None
     ):
         # Configuration
         self.homeserver = homeserver
@@ -69,6 +70,7 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
         self._test_user2_password = test_user2_password
         self._test_user2_token = test_user2_token
         self.runtests = runtests
+        self.disabled_roles = disabled_roles or set()
         # Préfixe de commande (lu une seule fois depuis .env)
         self.command_prefix = os.getenv('COMMAND_PREFIX', '!')
         
@@ -99,6 +101,7 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
         # Jeu
         self.game_manager = GameManager()
         self.game_manager.cupidon_wins_with_couple = self._cupidon_wins_with_couple
+        self.game_manager.disabled_roles = self.disabled_roles
         self.command_handler = CommandHandler(self.game_manager, command_prefix=self.command_prefix)
         self.leaderboard_manager = LeaderboardManager(self.game_manager.db)
         
@@ -203,6 +206,13 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
             f"• Vote: {self._vote_hour}h → {self._night_hour}h\n"
             f"• Durée max: {self._max_days} jours"
         )
+        if self.disabled_roles:
+            from models.role import ROLE_DISPLAY_NAMES
+            disabled_names = ', '.join(
+                ROLE_DISPLAY_NAMES.get(rt, rt.value)
+                for rt in sorted(self.disabled_roles, key=lambda r: r.value)
+            )
+            welcome_msg += f"\n\n🚫 **Rôles désactivés :** {disabled_names}"
         if self.registered_players:
             names = ", ".join(self.registered_players.values())
             welcome_msg += (
@@ -685,6 +695,16 @@ class WerewolfBot(PhaseHandlersMixin, RoleHandlersMixin, UIBuildersMixin, Comman
                     and player.role.role_type == RoleType.MERCENAIRE
                     and getattr(player, 'target', None)):
                 await self.notification_manager.send_mercenaire_target(
+                    player.user_id,
+                    player.target.pseudo
+                )
+
+        # Envoyer la cible au Chasseur de Têtes en DM
+        for player in self.game_manager.players.values():
+            if (player.role
+                    and player.role.role_type == RoleType.CHASSEUR_DE_TETES
+                    and getattr(player, 'target', None)):
+                await self.notification_manager.send_chasseur_de_tetes_target(
                     player.user_id,
                     player.target.pseudo
                 )

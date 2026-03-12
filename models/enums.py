@@ -55,6 +55,9 @@ class RoleType(Enum):
     MERCENAIRE = "MERCENAIRE"
     MENTALISTE = "MENTALISTE"
     DICTATEUR = "DICTATEUR"
+    
+    # Rôles tueurs solo
+    CHASSEUR_DE_TETES = "CHASSEUR_DE_TETES"
 
 
 class ActionType(Enum):
@@ -77,3 +80,4 @@ class ActionType(Enum):
     DICTATOR_KILL = "DICTATOR_KILL"
     DESIGNATE_MAYOR = "DESIGNATE_MAYOR"
     ELECT_MAYOR = "ELECT_MAYOR"
+    DESIGNATE_TARGET = "DESIGNATE_TARGET"

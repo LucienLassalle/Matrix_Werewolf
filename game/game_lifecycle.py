@@ -28,6 +28,7 @@ class GameLifecycleMixin:
         """Vérifie les conditions de victoire.
 
         Ordre de priorité :
+        0. Chasseur de Têtes (cible éliminée par vote, CDT vivant)
         1. Couple (2 derniers vivants sont amoureux)
         2. Loup Blanc (seul survivant)
         3. Village (plus aucun loup vivant)
@@ -37,6 +38,12 @@ class GameLifecycleMixin:
 
         if not living_players:
             return Team.NEUTRE
+
+        # 0. Chasseur de Têtes gagne seul
+        for p in living_players:
+            if (p.role and p.role.role_type == RoleType.CHASSEUR_DE_TETES
+                    and hasattr(p.role, 'has_won') and p.role.has_won):
+                return Team.NEUTRE
 
         wolves = [p for p in living_players if p.get_team() == Team.MECHANT]
         gentils = [p for p in living_players if p.get_team() == Team.GENTIL]

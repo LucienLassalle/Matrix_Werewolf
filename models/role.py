@@ -33,6 +33,7 @@ ROLE_DISPLAY_NAMES = {
     RoleType.MERCENAIRE: "Mercenaire",
     RoleType.MENTALISTE: "Mentaliste",
     RoleType.DICTATEUR: "Dictateur",
+    RoleType.CHASSEUR_DE_TETES: "Chasseur de T\u00eates",
 }
 
 

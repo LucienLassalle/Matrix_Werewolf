@@ -731,10 +731,19 @@ class PhaseHandlersMixin:
             Team.MECHANT: "🐺 **Les Loups-Garous**",
         }
 
-        # Loup Blanc solo ou égalité
+        # Loup Blanc solo, Chasseur de Têtes solo, ou égalité
         if winner == Team.NEUTRE:
             living = self.game_manager.get_living_players()
-            if living and living[0].role and living[0].role.role_type == RoleType.LOUP_BLANC:
+            # Chercher un Chasseur de Têtes victorieux
+            cdt_winner = next(
+                (p for p in living
+                 if p.role and p.role.role_type == RoleType.CHASSEUR_DE_TETES
+                 and hasattr(p.role, 'has_won') and p.role.has_won),
+                None
+            )
+            if cdt_winner:
+                team_display = f"🎯 **{cdt_winner.display_name} (Chasseur de Têtes)**"
+            elif living and living[0].role and living[0].role.role_type == RoleType.LOUP_BLANC:
                 team_display = "🐺⚪ **Le Loup Blanc**"
             else:
                 team_display = "☠️ **Personne** (égalité)"

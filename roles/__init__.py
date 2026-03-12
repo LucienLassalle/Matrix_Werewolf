@@ -24,6 +24,7 @@ from roles.voyante_aura import VoyanteAura
 from roles.mercenaire import Mercenaire
 from roles.mentaliste import Mentaliste
 from roles.dictateur import Dictateur
+from roles.chasseur_de_tetes import ChasseurDeTetes
 
 
 class RoleFactory:
@@ -52,6 +53,7 @@ class RoleFactory:
         RoleType.MERCENAIRE: Mercenaire,
         RoleType.MENTALISTE: Mentaliste,
         RoleType.DICTATEUR: Dictateur,
+        RoleType.CHASSEUR_DE_TETES: ChasseurDeTetes,
     }
     
     @classmethod

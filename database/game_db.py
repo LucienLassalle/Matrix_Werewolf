@@ -307,9 +307,18 @@ class GameDatabase:
             # Déterminer si le joueur a gagné
             if winner_team == Team.NEUTRE:
                 # Loup Blanc solo : seul le LB vivant gagne
-                won = (player.role and 
+                # Chasseur de Têtes solo : seul le CDT ayant accompli sa mission gagne
+                if (player.role and 
                        player.role.role_type == RoleType.LOUP_BLANC and 
-                       player.is_alive)
+                       player.is_alive):
+                    won = True
+                elif (player.role and
+                      player.role.role_type == RoleType.CHASSEUR_DE_TETES and
+                      hasattr(player.role, 'has_won') and player.role.has_won and
+                      player.is_alive):
+                    won = True
+                else:
+                    won = False
             elif winner_team == Team.COUPLE:
                 # Couple : les amoureux vivants gagnent
                 if player.lover is not None and player.is_alive:
@@ -325,6 +334,12 @@ class GameDatabase:
                 # Loups gagnent, mais le Loup Blanc perd avec eux
                 if player.role and player.role.role_type == RoleType.LOUP_BLANC:
                     won = False
+                elif (player.role and
+                      player.role.role_type == RoleType.CHASSEUR_DE_TETES and
+                      hasattr(player.role, 'target_dead_other') and
+                      player.role.target_dead_other):
+                    # CDT a rejoint l'alliance du mal → gagne avec les loups
+                    won = True
                 else:
                     won = (player.get_team() == winner_team)
             else:

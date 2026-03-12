@@ -3,9 +3,11 @@
 import asyncio
 import logging
 import os
+import sys
 from dotenv import load_dotenv
 
 from matrix_bot.bot_controller import WerewolfBot
+from models.enums import RoleType
 
 
 # Configuration du logging
@@ -46,6 +48,27 @@ async def main():
     if not password:
         logger.warning("⚠️ MATRIX_PASSWORD non configuré. Le renouvellement auto du token est désactivé.")
     
+    # ── Validation des rôles désactivés ──
+    disabled_roles = set()
+    role_disable_str = os.getenv('ROLE_DISABLE', '').strip()
+    if role_disable_str:
+        valid_role_names = {rt.value for rt in RoleType}
+        for raw_name in role_disable_str.split(','):
+            name = raw_name.strip()
+            if not name:
+                continue
+            if name not in valid_role_names:
+                logger.error(
+                    f"❌ ROLE_DISABLE : rôle invalide '{name}'. "
+                    f"Rôles valides : {', '.join(sorted(valid_role_names))}"
+                )
+                sys.exit(1)
+            disabled_roles.add(RoleType(name))
+        if disabled_roles:
+            from models.role import ROLE_DISPLAY_NAMES
+            names = ', '.join(ROLE_DISPLAY_NAMES.get(rt, rt.value) for rt in disabled_roles)
+            logger.info(f"🚫 Rôles désactivés : {names}")
+    
     # Configuration des comptes de test (pour les tests d'intégration)
     test_user_id = os.getenv('MATRIX_TESTUSER_ID')
     test_user_password = os.getenv('MATRIX_TESTUSER_PASSWORD')
@@ -74,7 +97,8 @@ async def main():
         test_user2_id=test_user2_id,
         test_user2_password=test_user2_password,
         test_user2_token=test_user2_token,
-        runtests=runtests
+        runtests=runtests,
+        disabled_roles=disabled_roles
     )
     
     try:

@@ -70,6 +70,9 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
         # Configuration Cupidon
         self.cupidon_wins_with_couple = True
 
+        # Rôles désactivés (set de RoleType)
+        self.disabled_roles: set = set()
+
     def reset(self):
         """Réinitialise le GameManager pour une nouvelle partie.
 
@@ -206,6 +209,13 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
         if self.phase != GamePhase.SETUP:
             return {"success": False, "message": "La partie a déjà commencé"}
 
+        # Vérifier que les rôles ne sont pas désactivés
+        for role_type in role_config:
+            if role_type in self.disabled_roles:
+                from models.role import ROLE_DISPLAY_NAMES
+                name = ROLE_DISPLAY_NAMES.get(role_type, role_type.value)
+                return {"success": False, "message": f"Le rôle {name} est désactivé"}
+
         roles = []
         for role_type, count in role_config.items():
             for _ in range(count):
@@ -233,7 +243,7 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
         logger.info(f"Phase changée: {phase.value}")
 
     def _validate_mandatory_roles(self, roles: list) -> dict:
-        """Vérifie que les rôles obligatoires sont présents."""
+        """Vérifie que les rôles obligatoires sont présents (sauf s'ils sont désactivés)."""
         errors = []
         role_types = [r.role_type for r in roles]
 
@@ -245,6 +255,8 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
             errors.append("Il faut au moins un rôle méchant (Loup-Garou) dans la partie")
 
         for mandatory in self.MANDATORY_ROLES:
+            if mandatory in self.disabled_roles:
+                continue
             if mandatory not in role_types:
                 errors.append(f"Le rôle {mandatory.value} est obligatoire")
 
@@ -269,37 +281,45 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
         evil_roles: list = []
         for _ in range(evil_count):
             roll = random.random()
-            if roll < 0.01 and not any(r.role_type == RoleType.LOUP_NOIR for r in evil_roles):
+            if roll < 0.01 and RoleType.LOUP_NOIR not in self.disabled_roles and not any(r.role_type == RoleType.LOUP_NOIR for r in evil_roles):
                 evil_roles.append(RoleFactory.create_role(RoleType.LOUP_NOIR))
-            elif roll < 0.03 and not any(r.role_type == RoleType.LOUP_BLANC for r in evil_roles):
+            elif roll < 0.03 and RoleType.LOUP_BLANC not in self.disabled_roles and not any(r.role_type == RoleType.LOUP_BLANC for r in evil_roles):
                 evil_roles.append(RoleFactory.create_role(RoleType.LOUP_BLANC))
-            elif roll < 0.05 and not any(r.role_type == RoleType.LOUP_BAVARD for r in evil_roles):
+            elif roll < 0.05 and RoleType.LOUP_BAVARD not in self.disabled_roles and not any(r.role_type == RoleType.LOUP_BAVARD for r in evil_roles):
                 evil_roles.append(RoleFactory.create_role(RoleType.LOUP_BAVARD))
-            elif roll < 0.10 and not any(r.role_type == RoleType.LOUP_VOYANT for r in evil_roles):
+            elif roll < 0.10 and RoleType.LOUP_VOYANT not in self.disabled_roles and not any(r.role_type == RoleType.LOUP_VOYANT for r in evil_roles):
                 evil_roles.append(RoleFactory.create_role(RoleType.LOUP_VOYANT))
             else:
                 evil_roles.append(RoleFactory.create_role(RoleType.LOUP_GAROU))
 
         # ── Attribution des rôles gentils ──
         good_roles: list = [
-            RoleFactory.create_role(RoleType.SORCIERE),
-            RoleFactory.create_role(RoleType.VOYANTE),
-            RoleFactory.create_role(RoleType.CHASSEUR),
+            RoleFactory.create_role(rt)
+            for rt in [RoleType.SORCIERE, RoleType.VOYANTE, RoleType.CHASSEUR]
+            if rt not in self.disabled_roles
         ]
         good_roles = good_roles[:good_count]
 
         unique_good = [
-            RoleType.CUPIDON, RoleType.VOLEUR,
-            RoleType.IDIOT, RoleType.CORBEAU,
-            RoleType.MONTREUR_OURS, RoleType.MERCENAIRE, RoleType.MENTALISTE,
-            RoleType.DICTATEUR, RoleType.ENFANT_SAUVAGE,
+            rt for rt in [
+                RoleType.CUPIDON, RoleType.VOLEUR,
+                RoleType.IDIOT, RoleType.CORBEAU,
+                RoleType.MONTREUR_OURS, RoleType.MERCENAIRE, RoleType.MENTALISTE,
+                RoleType.DICTATEUR, RoleType.ENFANT_SAUVAGE,
+                RoleType.CHASSEUR_DE_TETES,
+            ]
+            if rt not in self.disabled_roles
         ]
         if evil_count >= 2:
-            unique_good.append(RoleType.PETITE_FILLE)
+            if RoleType.PETITE_FILLE not in self.disabled_roles:
+                unique_good.append(RoleType.PETITE_FILLE)
 
         power_good = [
-            RoleType.VOYANTE_AURA,
-            RoleType.GARDE, RoleType.MEDIUM,
+            rt for rt in [
+                RoleType.VOYANTE_AURA,
+                RoleType.GARDE, RoleType.MEDIUM,
+            ]
+            if rt not in self.disabled_roles
         ]
 
         assigned_power_counts: dict = {

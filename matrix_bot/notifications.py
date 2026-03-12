@@ -123,6 +123,19 @@ class NotificationManager:
         await self.room_manager.send_dm(user_id, message)
         logger.info(f"Cible du Mercenaire envoyée à {user_id}: {target_pseudo}")
 
+    async def send_chasseur_de_tetes_target(self, user_id: str, target_pseudo: str):
+        """Envoie la cible assignée au Chasseur de Têtes en DM."""
+        message = "🎯 **Cible désignée !**\n\n"
+        message += f"Votre cible est : **{target_pseudo}**\n\n"
+        message += "Vous gagnez **seul** si le village élimine votre cible au vote "
+        message += "(et que vous êtes toujours en vie).\n\n"
+        message += "⚠️ Si votre cible meurt d'une autre façon (loups, sorcière, "
+        message += "chasseur…), vous rejoignez **l'alliance du mal** : vous gagnez "
+        message += "si les loups-garous remportent la partie.\n\n"
+        message += "💡 Orientez subtilement le vote vers votre cible !"
+        await self.room_manager.send_dm(user_id, message)
+        logger.info(f"Cible du Chasseur de Têtes envoyée à {user_id}: {target_pseudo}")
+
     async def send_conversion_notification(self, user_id: str, new_role: Role):
         """Notifie un joueur de sa conversion (ex: Loup Blanc → Loup)."""
         message = "🔄 **Votre rôle a changé !**\n\n"
@@ -173,7 +186,8 @@ class NotificationManager:
         conditions = {
             Team.GENTIL: "🎯 **Victoire:** Éliminer tous les loups-garous",
             Team.MECHANT: "🎯 **Victoire:** Éliminer tous les villageois",
-            Team.COUPLE: "🎯 **Victoire:** Être les 2 derniers survivants"
+            Team.COUPLE: "🎯 **Victoire:** Être les 2 derniers survivants",
+            Team.NEUTRE: "🎯 **Victoire:** Condition spéciale (voir description)"
         }
         return conditions.get(team, "")
     
@@ -263,6 +277,7 @@ class NotificationManager:
             ],
             "Enfant Sauvage": [f"`{p}enfant {{pseudo}}` — Choisir un mentor (nuit 1)"],
             "Mercenaire": ["Pas de commande — votre cible vous est assignée automatiquement"],
+            "Chasseur de Têtes": ["Pas de commande — votre cible vous est désignée automatiquement"],
             "Mentaliste": ["Pas de commande — le résultat du vote vous est communiqué automatiquement"],
             "Médium": [f"`{p}medium {{pseudo}}` — Communiquer avec un.e joueur.se mort.e (la nuit)"]
         }
@@ -418,6 +433,13 @@ class NotificationManager:
                 "Mais vous perdez votre droit de vote.\n"
                 "💡 Vous pouvez continuer à participer aux discussions et "
                 "influencer les autres joueurs."
+            ),
+            "Chasseur de Têtes": (
+                "🎯 Une cible vous est désignée automatiquement au début de la partie.\n"
+                "Si votre cible est éliminée par le **vote du village**, vous gagnez **seul** !\n"
+                "⚠️ Si votre cible meurt d'une autre façon (loups, sorcière…), "
+                "vous rejoignez l'**alliance du mal** et gagnez avec les loups.\n"
+                "💡 Orientez subtilement le vote vers votre cible sans paraître suspect."
             ),
         }
         return tutorials.get(role.name, "")

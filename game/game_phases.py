@@ -90,7 +90,7 @@ class PhaseManagerMixin:
                 RoleType.CUPIDON,
                 RoleType.MERCENAIRE,
                 RoleType.DICTATEUR,
-            }
+            } | self.disabled_roles
             extra_pool = [rt for rt in RoleType if rt not in excluded_from_pool]
             extras = random.sample(extra_pool, min(2, len(extra_pool)))
             for rt in extras:
