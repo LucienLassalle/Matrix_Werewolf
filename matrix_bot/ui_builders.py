@@ -194,24 +194,38 @@ class UIBuildersMixin:
         return message
 
     def _build_roles_list_message(self: 'WerewolfBot') -> str:
-        """Construit la liste des rôles en jeu (sans révéler qui a quel rôle)."""
-        summary = self.game_manager.get_roles_summary()
-        if not summary:
-            return "🎭 Aucun rôle distribué."
+        """Construit la liste de tous les rôles disponibles dans le bot.
 
-        message = "🎭 **Rôles en jeu :**\n\n"
-        for rt, info in sorted(summary.items(), key=lambda x: x[0].value):
-            team = info['team']
-            if team == Team.MECHANT:
+        Les rôles désactivés sont exclus de la liste.
+        """
+        from roles import RoleFactory
+        from models.role import ROLE_DISPLAY_NAMES
+
+        available = RoleFactory.get_available_roles()
+        # Exclure les rôles désactivés
+        available = [rt for rt in available if rt not in self.disabled_roles]
+
+        if not available:
+            return "🎭 Aucun rôle disponible."
+
+        message = "🎭 **Rôles disponibles :**\n\n"
+        for rt in available:
+            role = RoleFactory.create_role(rt)
+            if role.team == Team.MECHANT:
                 emoji = "🐺"
-            elif team == Team.GENTIL:
+            elif role.team == Team.GENTIL:
                 emoji = "🏠️"
-            elif team == Team.COUPLE:
-                emoji = "💕"
             else:
                 emoji = "❓"
-            message += f"{emoji} **{info['name']}** ×{info['count']}\n"
-            message += f"   {info['description']}\n\n"
+            message += f"{emoji} **{role.name}**\n"
+            message += f"   {role.description}\n\n"
+
+        if self.disabled_roles:
+            disabled_names = ', '.join(
+                ROLE_DISPLAY_NAMES.get(rt, rt.value)
+                for rt in sorted(self.disabled_roles, key=lambda r: r.value)
+            )
+            message += f"🚫 **Rôles désactivés :** {disabled_names}\n"
 
         return message
 
@@ -229,7 +243,7 @@ class UIBuildersMixin:
         message += f"• `{p}joueurs` — Voir la liste des joueurs (vivants/morts)\n"
         message += f"• `{p}leaderboard` / `{p}top` — Voir le classement\n"
         message += f"• `{p}stats` — Voir ses propres statistiques\n"
-        message += f"• `{p}roles` — Voir la liste des rôles en jeu (salon général)\n"
+        message += f"• `{p}roles` — Voir tous les rôles disponibles (lobby / MP)\n"
         message += "\n"
 
         # Commandes de vote (village)

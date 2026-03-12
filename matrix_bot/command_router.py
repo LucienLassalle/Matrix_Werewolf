@@ -209,20 +209,19 @@ class CommandRouterMixin:
             return {'success': True}
 
         if command == 'roles':
-            if self.game_manager.phase in (GamePhase.SETUP, GamePhase.ENDED):
+            is_village_or_wolves = (
+                self.room_manager.is_village_room(room_id)
+                or self.room_manager.is_wolves_room(room_id)
+            )
+            if is_village_or_wolves:
                 await self.client.send_message(
                     room_id,
-                    "❌ Aucune partie en cours. Les rôles ne sont pas encore distribués.",
+                    "📌 Consultez le **message épinglé** dans le salon du village "
+                    "pour voir les rôles en jeu.",
                     formatted=True
                 )
-                return {'success': False, 'error': 'Pas de partie en cours'}
-            if room_id != self.lobby_room_id:
-                await self.client.send_message(
-                    room_id,
-                    f"❌ Utilisez `{self.command_prefix}roles` dans le **salon général**.",
-                    formatted=True
-                )
-                return {'success': False, 'error': 'Mauvais salon'}
+                return {'success': True}
+            # Lobby ou DM : afficher tous les rôles disponibles du bot
             message = self._build_roles_list_message()
             await self.client.send_message(room_id, message, formatted=True)
             return {'success': True}
