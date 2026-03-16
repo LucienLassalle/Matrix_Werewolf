@@ -10,6 +10,9 @@ if TYPE_CHECKING:
 
 class Medium(Role):
     """Médium - Parle avec les morts."""
+
+    emoji = "👻"
+    is_info_role = True
     
     def __init__(self):
         super().__init__(RoleType.MEDIUM, Team.GENTIL)

@@ -85,13 +85,11 @@ class PhaseManagerMixin:
             for p in self.players.values()
         )
         if has_voleur:
-            excluded_from_pool = {
-                RoleType.VOLEUR,
-                RoleType.CUPIDON,
-                RoleType.MERCENAIRE,
-                RoleType.DICTATEUR,
-            } | self.disabled_roles
-            extra_pool = [rt for rt in RoleType if rt not in excluded_from_pool]
+            excluded_from_pool = {RoleType.VOLEUR}
+            extra_pool = [
+                rt for rt in RoleFactory.get_available_roles()
+                if rt not in excluded_from_pool and rt not in self.disabled_roles
+            ]
             extras = random.sample(extra_pool, min(2, len(extra_pool)))
             for rt in extras:
                 self.extra_roles.append(RoleFactory.create_role(rt))
@@ -148,6 +146,9 @@ class PhaseManagerMixin:
         for player in self.players.values():
             if player.role and player.is_alive:
                 player.role.on_night_start(self)
+
+        jailer, prisoner = self.get_jailer_and_prisoner()
+        self.set_jailed_player(prisoner)
 
         for pending_player in self._pending_kills:
             if pending_player.is_alive:
@@ -238,6 +239,8 @@ class PhaseManagerMixin:
         """Commence un nouveau jour."""
         self.log(f"=== Jour {self.day_count} ===")
         self.phase = GamePhase.DAY
+
+        self.set_jailed_player(None)
 
         self.check_hunter_shot()
 

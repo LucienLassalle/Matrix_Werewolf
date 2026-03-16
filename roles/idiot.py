@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 class Idiot(Role):
     """L'Idiot - Est gracié une fois mais perd son droit de vote."""
+
+    emoji = "🤪"
     
     def __init__(self):
         super().__init__(RoleType.IDIOT, Team.GENTIL)

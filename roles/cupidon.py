@@ -11,11 +11,13 @@ if TYPE_CHECKING:
 
 class Cupidon(Role):
     """Cupidon - Marie deux personnes durant la première nuit."""
+
+    emoji = "💘"
     
     def __init__(self):
         super().__init__(RoleType.CUPIDON, Team.GENTIL)
         self.has_used_power = False
-    
+
     def get_description(self) -> str:
         return ("Cupidon - Durant la première nuit, vous pouvez marier deux personnes. "
                 "Si l'une meurt, l'autre meurt aussi.")
@@ -46,22 +48,25 @@ class Cupidon(Role):
             if not target1.is_alive or not target2.is_alive:
                 return {"success": False, "message": "Les deux cibles doivent être vivantes"}
             
-            if target1.lover or target2.lover:
-                return {"success": False, "message": "Une des personnes est déjà en couple"}
-            
-            # Créer le lien amoureux
-            target1.lover = target2
-            target2.lover = target1
+            group1 = game.get_love_group(target1)
+            group2 = game.get_love_group(target2)
+            group = list(group1.union(group2))
+            group.sort(key=lambda p: p.user_id)
+
+            for a in group:
+                for b in group:
+                    if a != b:
+                        a.add_lover(b)
             
             self.has_used_power = True
             
             # Vérifier si Cupidon peut gagner avec le couple
-            couple_team = self._get_couple_win_condition(target1, target2)
+            couple_team = self._get_couple_win_condition(group)
             
             return {
                 "success": True,
                 "message": f"Vous avez marié {target1.pseudo} et {target2.pseudo}",
-                "couple": [target1, target2],
+                "couple": group,
                 "couple_team": couple_team
             }
         
@@ -73,12 +78,9 @@ class Cupidon(Role):
     def restore_state(self, data: dict, players: dict):
         self.has_used_power = data.get('has_used_power', False)
     
-    def _get_couple_win_condition(self, player1: 'Player', player2: 'Player') -> str:
+    def _get_couple_win_condition(self, lovers: list['Player']) -> str:
         """Détermine la condition de victoire du couple."""
-        team1 = player1.get_team()
-        team2 = player2.get_team()
-        
-        if team1 != team2:
-            return "COUPLE"  # Le couple gagne seul si équipes différentes
-        else:
-            return team1.value  # Le couple gagne avec leur équipe commune
+        teams = {p.get_team() for p in lovers}
+        if len(teams) == 1:
+            return next(iter(teams)).value
+        return "COUPLE"

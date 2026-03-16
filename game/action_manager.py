@@ -40,7 +40,10 @@ class ActionManager:
         2. Vote des loups (avec conversion Loup Noir si active)
         3. Sorcière (heal et/ou poison)
         4. Loup Blanc (kill)
-        5. Actions de vision (déjà résolues, juste log)
+        5. Assassin (kill)
+        6. Pyromane (embrasement)
+        7. Pyromane (aspersion)
+        8. Actions de vision (déjà résolues, juste log)
         
         Returns:
             dict avec wolf_target, deaths, saved, converted, actions
@@ -152,8 +155,57 @@ class ActionManager:
                             "success": True,
                             "target": target
                         })
+
+        # 5. Assassin (tue une cible, le Garde protege)
+        for action in self.pending_actions:
+            if action["action_type"] == ActionType.ASSASSIN_KILL:
+                target = action["target"]
+                if target and target.is_alive:
+                    if target.is_protected:
+                        results["actions"].append({
+                            "type": "assassin_kill",
+                            "success": False,
+                            "target": target,
+                            "reason": "protected"
+                        })
+                    else:
+                        self.night_deaths.append(target)
+                        results["actions"].append({
+                            "type": "assassin_kill",
+                            "success": True,
+                            "target": target
+                        })
+
+        # 6. Pyromane (embrasement)
+        for action in self.pending_actions:
+            if action["action_type"] == ActionType.PYROMANE_IGNITE:
+                player = action["player"]
+                role = getattr(player, "role", None)
+                soaked = []
+                if role and hasattr(role, "get_soaked_players"):
+                    soaked = role.get_soaked_players(game.players)
+
+                for target in soaked:
+                    if target and target.is_alive:
+                        self.night_deaths.append(target)
+
+                results["actions"].append({
+                    "type": "pyromane_ignite",
+                    "success": True,
+                    "targets": soaked,
+                })
+
+        # 7. Pyromane (aspersion)
+        for action in self.pending_actions:
+            if action["action_type"] == ActionType.PYROMANE_SOAK:
+                target = action["target"]
+                results["actions"].append({
+                    "type": "pyromane_soak",
+                    "success": True,
+                    "target": target,
+                })
         
-        # 5. Actions de vision (déjà exécutées lors de l'enregistrement)
+        # 8. Actions de vision (déjà exécutées lors de l'enregistrement)
         for action in self.pending_actions:
             if action["action_type"] in [ActionType.SEE_ROLE, ActionType.SEE_AURA]:
                 results["actions"].append({
@@ -166,15 +218,13 @@ class ActionManager:
         seen = set()
         for dead_player in self.night_deaths:
             if dead_player.is_alive and dead_player.user_id not in seen:
-                seen.add(dead_player.user_id)
-                # Sauvegarder l'amoureux avant le kill (Player.kill cascade)
-                lover = dead_player.lover if dead_player.lover and dead_player.lover.is_alive else None
+                group = game.get_love_group(dead_player)
+                alive_group = [p for p in group if p.is_alive]
                 dead_player.kill()
-                results["deaths"].append(dead_player)
-                # Si l'amoureux est mort par cascade, l'ajouter aussi
-                if lover and not lover.is_alive and lover.user_id not in seen:
-                    seen.add(lover.user_id)
-                    results["deaths"].append(lover)
+                for member in alive_group:
+                    if not member.is_alive and member.user_id not in seen:
+                        seen.add(member.user_id)
+                        results["deaths"].append(member)
         
         self.pending_actions.clear()
         return results

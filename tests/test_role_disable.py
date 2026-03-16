@@ -204,7 +204,7 @@ class TestVoleurExtraCardsDisabled:
         game = make_game_setup(6, disabled=disabled)
         result = game.set_roles({
             RoleType.VOLEUR: 1,
-            RoleType.LOUP_GAROU: 1,
+            RoleType.LOUP_GAROU: 2,
             RoleType.SORCIERE: 1,
             RoleType.VOYANTE: 1,
             RoleType.CHASSEUR: 1,
@@ -225,7 +225,7 @@ class TestVoleurExtraCardsDisabled:
         game = make_game_setup(6, disabled=disabled)
         result = game.set_roles({
             RoleType.VOLEUR: 1,
-            RoleType.LOUP_GAROU: 1,
+            RoleType.LOUP_GAROU: 2,
             RoleType.SORCIERE: 1,
             RoleType.VOYANTE: 1,
             RoleType.CHASSEUR: 1,

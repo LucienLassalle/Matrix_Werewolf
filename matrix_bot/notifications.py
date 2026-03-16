@@ -82,34 +82,26 @@ class NotificationManager:
         
         await self.room_manager.send_dm(user_id, message)
     
-    async def send_couple_notification(self, player1, player2):
-        """Notifie les deux amoureux de leur couple avec l'identité de leur partenaire.
-        
-        Args:
-            player1: Premier joueur du couple (objet Player).
-            player2: Second joueur du couple (objet Player).
-        """
-        role1_name = player1.role.name if player1.role else "Inconnu"
-        role2_name = player2.role.name if player2.role else "Inconnu"
-        
-        # Message pour player1
-        msg1 = "💕 **Cupidon vous a choisi !**\n\n"
-        msg1 += f"Vous êtes en couple avec **{player2.pseudo}** (**{role2_name}**).\n"
-        msg1 += "Vous avez été ajouté à un salon privé pour communiquer.\n\n"
-        msg1 += "⚠️ **Important:**\n"
-        msg1 += "• Si votre partenaire meurt, vous mourez aussi\n"
-        msg1 += "• Si vous êtes les 2 derniers survivants, vous gagnez ensemble\n"
-        
-        # Message pour player2
-        msg2 = "💕 **Cupidon vous a choisi !**\n\n"
-        msg2 += f"Vous êtes en couple avec **{player1.pseudo}** (**{role1_name}**).\n"
-        msg2 += "Vous avez été ajouté à un salon privé pour communiquer.\n\n"
-        msg2 += "⚠️ **Important:**\n"
-        msg2 += "• Si votre partenaire meurt, vous mourez aussi\n"
-        msg2 += "• Si vous êtes les 2 derniers survivants, vous gagnez ensemble\n"
-        
-        await self.room_manager.send_dm(player1.user_id, msg1)
-        await self.room_manager.send_dm(player2.user_id, msg2)
+    async def send_couple_notification(self, lovers: list):
+        """Notifie les amoureux de leur couple avec l'identité des partenaires."""
+        if not lovers:
+            return
+
+        for player in lovers:
+            partners = [p for p in lovers if p != player]
+            partners_text = ", ".join(
+                f"**{p.pseudo}** ({p.role.name if p.role else 'Inconnu'})"
+                for p in partners
+            )
+
+            msg = "💕 **Cupidon vous a choisi !**\n\n"
+            msg += f"Vous êtes en couple avec {partners_text}.\n"
+            msg += "Vous avez été ajouté à un salon privé pour communiquer.\n\n"
+            msg += "⚠️ **Important:**\n"
+            msg += "• Si un membre du couple meurt, vous mourez aussi\n"
+            msg += "• Si vous êtes les derniers survivants, vous gagnez ensemble\n"
+
+            await self.room_manager.send_dm(player.user_id, msg)
     
     async def send_mercenaire_target(self, user_id: str, target_pseudo: str):
         """Envoie la cible assignée au Mercenaire en DM."""
@@ -147,12 +139,7 @@ class NotificationManager:
     
     def _format_role_message(self, role: Role) -> str:
         """Formate le message d'annonce de rôle avec mini-tutoriel."""
-        # Emoji selon l'équipe
-        emoji = {
-            Team.GENTIL: "🏘️",
-            Team.MECHANT: "🐺",
-            Team.COUPLE: "💕"
-        }.get(role.team, "❓")
+        emoji = getattr(role, 'emoji', "❓")
         
         message = f"{emoji} **Votre rôle: {role.name}**\n\n"
         message += f"📖 **Description:**\n{role.description}\n\n"
@@ -230,6 +217,16 @@ class NotificationManager:
                 f"Tirer 2 cartes (`{p}voleur-tirer`)",
                 f"Choisir une carte tirée (`{p}voleur-choisir 1` ou `{p}voleur-choisir 2`)",
                 f"Échanger avec un joueur (`{p}voleur-echange {{pseudo}}`)"
+            ],
+            "Assassin": [f"Éliminer une cible (`{p}assassin {{pseudo}}`)"],
+            "Pyromane": [
+                f"Asperger jusqu'a deux cibles (`{p}pyromane {{pseudo}}`)",
+                f"Embraser les cibles aspergees (`{p}pyromane-brule`)",
+            ],
+            "Détective": [f"Comparer deux joueurs (`{p}detective {{pseudo1}} {{pseudo2}}`)"],
+            "Geôlier": [
+                f"Interroger votre prisonnier (`{p}msg {{message}}`)",
+                f"Exécuter le prisonnier (`{p}geolier-tuer`)",
             ]
         }
         
@@ -279,7 +276,18 @@ class NotificationManager:
             "Mercenaire": ["Pas de commande — votre cible vous est assignée automatiquement"],
             "Chasseur de Têtes": ["Pas de commande — votre cible vous est désignée automatiquement"],
             "Mentaliste": ["Pas de commande — le résultat du vote vous est communiqué automatiquement"],
-            "Médium": [f"`{p}medium {{pseudo}}` — Communiquer avec un.e joueur.se mort.e (la nuit)"]
+            "Médium": [f"`{p}medium {{pseudo}}` — Communiquer avec un.e joueur.se mort.e (la nuit)"],
+            "Assassin": [f"`{p}assassin {{pseudo}}` — Éliminer une cible (la nuit)"],
+            "Pyromane": [
+                f"`{p}pyromane {{pseudo}}` — Asperger une cible (jusqu'a 2 par nuit)",
+                f"`{p}pyromane-brule` — Embraser les cibles aspergees (1 fois)"
+            ],
+            "Détective": [f"`{p}detective {{pseudo1}} {{pseudo2}}` — Comparer deux joueurs (la nuit)"],
+            "Geôlier": [
+                f"`{p}geolier {{pseudo}}` — Choisir un prisonnier (de jour)",
+                f"`{p}geolier-tuer` — Exécuter le prisonnier (1 fois, la nuit)",
+                f"`{p}msg {{message}}` — Parler au prisonnier (DM)"
+            ]
         }
         
         if role.name in role_commands:
@@ -440,6 +448,31 @@ class NotificationManager:
                 "⚠️ Si votre cible meurt d'une autre façon (loups, sorcière…), "
                 "vous rejoignez l'**alliance du mal** et gagnez avec les loups.\n"
                 "💡 Orientez subtilement le vote vers votre cible sans paraître suspect."
+            ),
+            "Assassin": (
+                "🗡️ Chaque nuit, vous pouvez éliminer une cible en secret.\n"
+                f"Exemple : `{p}assassin Alice` (en DM).\n"
+                "🎯 Vous gagnez si vous êtes le dernier survivant.\n"
+                "💡 Évitez d'attirer l'attention pendant la journée."
+            ),
+            "Pyromane": (
+                "🔥 Chaque nuit, vous pouvez asperger jusqu'a deux personnes.\n"
+                f"Exemple : `{p}pyromane Bob` (en DM).\n"
+                "Ou vous pouvez embraser toutes vos cibles (1 fois).\n"
+                f"Exemple : `{p}pyromane-brule` (en DM).\n"
+                "🎯 Vous gagnez si vous êtes le dernier survivant."
+            ),
+            "Détective": (
+                "🕵️ Chaque nuit, comparez deux joueurs pour savoir s'ils sont dans la même équipe.\n"
+                f"Exemple : `{p}detective Alice Bob` (en DM).\n"
+                "💡 Utilisez ces informations pour aider le village."
+            ),
+            "Geôlier": (
+                "🔒 Le jour, choisissez un prisonnier pour la nuit.\n"
+                f"Exemple : `{p}geolier Alice` (en DM).\n"
+                "Le prisonnier est isolé et ne peut pas agir.\n"
+                f"Pour lui parler : `{p}msg Bonjour`.\n"
+                f"Vous pouvez exécuter une fois : `{p}geolier-tuer` (nuit)."
             ),
         }
         return tutorials.get(role.name, "")

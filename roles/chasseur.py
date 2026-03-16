@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 
 class Chasseur(Role):
     """Chasseur - Peut tuer quelqu'un quand il meurt."""
+
+    emoji = "🎯"
     
     def __init__(self):
         super().__init__(RoleType.CHASSEUR, Team.GENTIL)

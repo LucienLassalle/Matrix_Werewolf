@@ -10,6 +10,9 @@ if TYPE_CHECKING:
 
 class VoyanteAura(Role):
     """Voyante d'Aura - Voit si un joueur est Gentil, Neutre ou Méchant."""
+
+    emoji = "🌈"
+    is_info_role = True
     
     def __init__(self):
         super().__init__(RoleType.VOYANTE_AURA, Team.GENTIL)

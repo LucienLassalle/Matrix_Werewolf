@@ -10,6 +10,9 @@ if TYPE_CHECKING:
 
 class MontreurOurs(Role):
     """Montreur d'Ours - Grogne si un loup est à côté de lui."""
+
+    emoji = "🐻"
+    is_info_role = True
     
     def __init__(self):
         super().__init__(RoleType.MONTREUR_OURS, Team.GENTIL)

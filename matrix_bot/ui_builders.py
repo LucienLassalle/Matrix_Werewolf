@@ -30,16 +30,7 @@ class UIBuildersMixin:
         message += "📋 **Rôles en jeu :**\n\n"
 
         for rt, info in sorted(summary.items(), key=lambda x: x[0].value):
-            team = info['team']
-            if team == Team.MECHANT:
-                emoji = "🐺"
-            elif team == Team.GENTIL:
-                emoji = "🏘️"
-            elif team == Team.COUPLE:
-                emoji = "💕"
-            else:
-                emoji = "❓"
-
+            emoji = info.get('emoji', "❓")
             message += f"{emoji} **{info['name']}** ×{info['count']}\n"
             message += f"   {info['description']}\n\n"
 
@@ -211,12 +202,7 @@ class UIBuildersMixin:
         message = "🎭 **Rôles disponibles :**\n\n"
         for rt in available:
             role = RoleFactory.create_role(rt)
-            if role.team == Team.MECHANT:
-                emoji = "🐺"
-            elif role.team == Team.GENTIL:
-                emoji = "🏠️"
-            else:
-                emoji = "❓"
+            emoji = getattr(role, 'emoji', "❓")
             message += f"{emoji} **{role.name}**\n"
             message += f"   {role.description}\n\n"
 
@@ -272,6 +258,16 @@ class UIBuildersMixin:
         message += f"• `{p}lg` — Abandonner la voyance et rejoindre la meute (Loup Voyant)\n"
         message += f"• `{p}convertir` — Convertir la cible des loups en loup (Loup Noir, 1 fois)\n"
         message += f"• `{p}tuer {{pseudo}}` — Tuer un joueur (Loup Blanc 1 nuit/2, Chasseur après mort)\n"
+        message += f"• `{p}assassin {{pseudo}}` — Éliminer une cible (Assassin)\n"
+        message += f"• `{p}pyromane {{pseudo}}` — Asperger une cible (Pyromane)\n"
+        message += f"• `{p}pyromane-brule` — Embraser les cibles aspergées (Pyromane, 1 fois)\n"
+        message += f"• `{p}detective {{pseudo1}} {{pseudo2}}` — Comparer deux joueurs (Détective)\n"
+        message += f"• `{p}geolier-tuer` — Exécuter le prisonnier (Geôlier, 1 fois)\n"
+        message += f"• `{p}msg {{message}}` — Parler au prisonnier (Geôlier)\n"
+
+        message += "\n🔒 **Commandes privées de jour** (en message privé au bot) :\n"
+        message += f"• `{p}dictateur {{pseudo}}` — Éliminer quelqu'un sans vote (Dictateur)\n"
+        message += f"• `{p}geolier {{pseudo}}` — Choisir un prisonnier pour la nuit (Geôlier)\n"
         message += f"• `{p}voleur-tirer` — Tirer 2 cartes (Voleur, nuit 1)\n"
         message += f"• `{p}voleur-choisir {{1|2}}` — Choisir une carte tirée (Voleur)\n"
         message += f"• `{p}voleur-echange {{pseudo}}` — Échanger son rôle (Voleur, nuit 1)\n"

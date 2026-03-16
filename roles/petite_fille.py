@@ -6,6 +6,9 @@ from models.enums import RoleType, Team
 
 class PetiteFille(Role):
     """Petite Fille - Observe partiellement les messages des loups."""
+
+    emoji = "👧"
+    is_info_role = True
     
     def __init__(self):
         super().__init__(RoleType.PETITE_FILLE, Team.GENTIL)

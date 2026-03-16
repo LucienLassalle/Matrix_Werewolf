@@ -6,6 +6,8 @@ from models.enums import RoleType, Team
 
 class Villageois(Role):
     """Villageois simple sans pouvoir spécial."""
+
+    emoji = "👤"
     
     def __init__(self):
         super().__init__(RoleType.VILLAGEOIS, Team.GENTIL)

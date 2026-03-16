@@ -14,6 +14,8 @@ class Sorciere(Role):
     Peut utiliser les DEUX potions la même nuit (règles Wolfy).
     Chaque potion n'est utilisable qu'une seule fois dans la partie.
     """
+    emoji = "🧪"
+    is_info_role = True
     
     def __init__(self):
         super().__init__(RoleType.SORCIERE, Team.GENTIL)

@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 class Mentaliste(Role):
     """Mentaliste - Sait si le vote est positif ou négatif."""
+
+    emoji = "🧠"
     
     def __init__(self):
         super().__init__(RoleType.MENTALISTE, Team.GENTIL)

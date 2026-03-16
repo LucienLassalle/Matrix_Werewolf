@@ -97,6 +97,15 @@ class CommandRouterMixin:
                 f"l'esprit de **{target_name}**"
             )
 
+        elif command == 'detective' and len(args) >= 2:
+            t1 = self.game_manager.get_player_by_pseudo(args[0])
+            t2 = self.game_manager.get_player_by_pseudo(args[1])
+            if t1 and t2:
+                self._game_events.append(
+                    f"Nuit {night} — 🕵️ **Le Détective** interroge "
+                    f"**{t1.display_name}** et **{t2.display_name}**"
+                )
+
         elif command == 'voleur-echange' and target_name:
             new_role = result.get('new_role')
             role_label = new_role.name if new_role else '?'
@@ -135,6 +144,29 @@ class CommandRouterMixin:
                     f"Nuit {night} — 🐺⚪ **Le Loup Blanc** élimine "
                     f"**{target_name}**"
                 )
+
+        elif command == 'assassin' and target_name:
+            self._game_events.append(
+                f"Nuit {night} — 🗡️ **L'Assassin** vise "
+                f"**{target_name}**"
+            )
+
+        elif command == 'pyromane' and target_name:
+            self._game_events.append(
+                f"Nuit {night} — 🔥 **Le Pyromane** asperge "
+                f"**{target_name}**"
+            )
+
+        elif command == 'pyromane-brule':
+            self._game_events.append(
+                f"Nuit {night} — 🔥 **Le Pyromane** embrase ses cibles"
+            )
+
+        elif command == 'geolier' and target_name:
+            self._game_events.append(
+                f"Jour {day} — 🔒 **Le Geôlier** choisit "
+                f"**{target_name}** comme prisonnier"
+            )
 
         elif command == 'maire':
             new_mayor = result.get('new_mayor')
@@ -365,12 +397,37 @@ class CommandRouterMixin:
                 )
                 return {'success': False, 'error': 'Commande privée uniquement'}
 
+        # Geolier : selection du prisonnier, DM uniquement, de jour
+        if command == 'geolier':
+            if not is_dm:
+                await self.client.send_dm(
+                    user_id,
+                    f"❌ La commande **{self.command_prefix}geolier** doit être utilisée en **message privé** avec le bot."
+                )
+                return {'success': False, 'error': 'Commande privée uniquement'}
+            if self.game_manager.phase != GamePhase.DAY:
+                await self.client.send_dm(user_id, "❌ Le Geolier ne peut agir que **pendant le jour**.")
+                return {'success': False, 'error': 'Phase incorrecte'}
+
+        # Geolier : execution du prisonnier, DM uniquement, la nuit
+        if command == 'geolier-tuer':
+            if not is_dm:
+                await self.client.send_dm(
+                    user_id,
+                    f"❌ La commande **{self.command_prefix}geolier-tuer** doit être utilisée en **message privé** avec le bot."
+                )
+                return {'success': False, 'error': 'Commande privée uniquement'}
+            if self.game_manager.phase != GamePhase.NIGHT:
+                await self.client.send_dm(user_id, "❌ Le Geolier ne peut executer que **pendant la nuit**.")
+                return {'success': False, 'error': 'Phase incorrecte'}
+
         # Commandes nocturnes privées : uniquement en DM, la nuit
         night_dm_commands = [
             'voyante', 'sorciere-sauve', 'sorciere-tue', 'garde', 'cupidon',
             'medium', 'enfant', 'corbeau', 'curse', 'tuer',
             'voleur-tirer', 'voleur-choisir', 'voleur-echange', 'lg',
-            'convertir'
+            'convertir', 'assassin', 'pyromane', 'pyromane-brule', 'detective',
+            'geolier-tuer'
         ]
         if command in night_dm_commands:
             if not is_dm:
@@ -384,6 +441,47 @@ class CommandRouterMixin:
                 if command != 'tuer' or not player.role or player.role.role_type != RoleType.CHASSEUR:
                     await self.client.send_dm(user_id, "❌ Cette commande n'est utilisable que **la nuit**.")
                     return {'success': False, 'error': 'Phase incorrecte'}
+
+        # Prisonnier : aucune action possible (sauf !msg)
+        if player.is_jailed and command != 'msg':
+            await self.client.send_dm(user_id, "❌ Vous etes emprisonne et ne pouvez pas agir.")
+            return {'success': False, 'error': 'Emprisonne'}
+
+        # Relai des messages du geolier (DM)
+        if command == 'msg':
+            if not is_dm:
+                await self.client.send_dm(
+                    user_id,
+                    f"❌ La commande **{self.command_prefix}msg** doit être utilisée en **message privé** avec le bot."
+                )
+                return {'success': False, 'error': 'Commande privée uniquement'}
+            if not args:
+                await self.client.send_dm(user_id, f"❌ Usage : {self.command_prefix}msg {{message}}")
+                return {'success': False, 'error': 'Args manquants'}
+
+            jailer, prisoner = self.game_manager.get_jailer_and_prisoner()
+            if not jailer or not prisoner:
+                await self.client.send_dm(user_id, "❌ Il n'y a pas d'interrogatoire en cours.")
+                return {'success': False, 'error': 'Pas de prisonnier'}
+
+            if user_id not in {jailer.user_id, prisoner.user_id}:
+                await self.client.send_dm(user_id, "❌ Vous n'etes pas concerne par l'interrogatoire.")
+                return {'success': False, 'error': 'Non autorise'}
+
+            message = ' '.join(args).strip()
+            if user_id == jailer.user_id:
+                await self.client.send_dm(
+                    prisoner.user_id,
+                    f"🔒 **Message du geolier :**\n{message}"
+                )
+            else:
+                await self.client.send_dm(
+                    jailer.user_id,
+                    f"🔒 **Message du prisonnier :**\n{message}"
+                )
+
+            await self.client.send_dm(user_id, "✅ Message envoye.")
+            return {'success': True}
 
         # Exécuter la commande via execute_command (passe les args bruts)
         try:

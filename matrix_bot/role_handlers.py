@@ -246,6 +246,53 @@ class RoleHandlersMixin:
             self._mayor_succession_timeout(timeout_seconds)
         )
 
+    # ── Geolier (prison) ───────────────────────────────────────────
+
+    async def _apply_jailer_night(self: WerewolfBot):
+        """Mute le prisonnier du geolier et envoie les instructions en DM."""
+        jailer, prisoner = self.game_manager.get_jailer_and_prisoner()
+        if not jailer or not prisoner or not prisoner.is_alive:
+            self._jailed_user_id = None
+            return
+
+        if self._jailed_user_id == prisoner.user_id:
+            return
+
+        self._jailed_user_id = prisoner.user_id
+        await self._jail_player(prisoner.user_id)
+
+        await self.room_manager.send_to_village(
+            f"🔒 **{prisoner.display_name}** a ete emprisonne par le Geolier, "
+            "il ne pourra faire aucune action cette nuit."
+        )
+
+        await self.client.send_dm(
+            jailer.user_id,
+            "🔒 **Vous interrogez un prisonnier cette nuit.**\n\n"
+            f"Prisonnier: **{prisoner.display_name}**\n\n"
+            f"Pour lui parler, utilisez `{self.command_prefix}msg {{message}}`.\n"
+            f"Si vous le jugez suspect, vous pouvez l'executer une fois avec `{self.command_prefix}geolier-tuer`."
+        )
+
+        await self.client.send_dm(
+            prisoner.user_id,
+            "🔒 **Vous etes emprisonne cette nuit.**\n\n"
+            "Vous ne pouvez pas agir et vous etes isole.\n"
+            f"Pour parler au geolier, utilisez `{self.command_prefix}msg {{message}}`."
+        )
+
+    async def _release_jailer_day(self: WerewolfBot):
+        """Libere le prisonnier et retire le mute temporaire."""
+        if not self._jailed_user_id:
+            return
+
+        user_id = self._jailed_user_id
+        player = self.game_manager.get_player(user_id)
+        if player and player.is_alive:
+            await self._unjail_player(user_id)
+
+        self._jailed_user_id = None
+
     async def _mayor_succession_timeout(self: WerewolfBot, timeout_seconds: float = 300):
         """Timeout pour la succession du maire (jusqu'à la prochaine phase)."""
         try:
@@ -392,7 +439,7 @@ class RoleHandlersMixin:
             if (command == 'tuer' and actor and actor.role
                     and actor.role.role_type == RoleType.CHASSEUR):
                 # Mort par amoureux cascade
-                if dead.lover and not dead.lover.is_alive and dead != actor:
+                if dead.get_lovers() and any(not l.is_alive for l in dead.get_lovers()) and dead != actor:
                     msg = (
                         f"💔 **{dead.display_name}** meurt de chagrin (amoureux/se) !\n"
                         f"Son rôle était : **{dead.role.name}**"
@@ -432,7 +479,7 @@ class RoleHandlersMixin:
                         f"⚔️ Le Dictateur élimine **{dead.display_name}** ({dead.role.name})"
                     )
             elif command == 'admin-kill':
-                if dead.lover and not dead.lover.is_alive and dead.user_id != actor_id:
+                if dead.get_lovers() and any(not l.is_alive for l in dead.get_lovers()) and dead.user_id != actor_id:
                     msg = (
                         f"💔 **{dead.display_name}** meurt de chagrin (amoureux/se) !\n"
                         f"Son rôle était : **{dead.role.name}**"

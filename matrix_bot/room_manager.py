@@ -81,7 +81,7 @@ class RoomManager:
     
     async def create_couple_room(self, lover_ids: List[str]) -> Optional[str]:
         """Crée le salon du couple."""
-        if len(lover_ids) != 2:
+        if len(lover_ids) < 2:
             return None
         
         self.couple_room = await self.client.create_room(
@@ -97,8 +97,8 @@ class RoomManager:
                 self.couple_room,
                 "💕 **Vous êtes en couple !**\n\n"
                 "Vous pouvez communiquer librement dans ce salon.\n"
-                "Si l'un de vous meurt, l'autre meurt aussi.\n\n"
-                "⚠️ Vous gagnez ensemble si vous êtes les deux derniers survivants.",
+                "Si un membre du couple meurt, les autres meurent aussi.\n\n"
+                "⚠️ Vous gagnez ensemble si vous êtes les derniers survivants.",
                 formatted=True
             )
         

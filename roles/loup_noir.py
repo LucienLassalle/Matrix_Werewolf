@@ -17,6 +17,8 @@ class LoupNoir(Role):
     au lieu de la dévorer. La cible rejoint alors la meute.
     Si le Garde protège la cible, la conversion est aussi bloquée.
     """
+
+    emoji = "🐺⚫"
     
     def __init__(self):
         super().__init__(RoleType.LOUP_NOIR, Team.MECHANT)

@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 
 class EnfantSauvage(Role):
     """Enfant Sauvage - Choisit un mentor, devient loup si le mentor meurt."""
+
+    emoji = "🧒"
     
     def __init__(self):
         super().__init__(RoleType.ENFANT_SAUVAGE, Team.GENTIL)

@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 
 class Mercenaire(Role):
     """Mercenaire - Doit faire éliminer une cible désignée dans les 2 premiers jours."""
+
+    emoji = "💰"
     
     def __init__(self):
         super().__init__(RoleType.MERCENAIRE, Team.NEUTRE)

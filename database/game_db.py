@@ -9,11 +9,14 @@ from pathlib import Path
 
 from models.player import Player
 from models.enums import GamePhase, Team, RoleType
+from database.game_db_stats import GameDatabaseStatsMixin
+from database.game_db_registrations import GameDatabaseRegistrationsMixin
+from database.game_db_rooms import GameDatabaseRoomsMixin
 
 logger = logging.getLogger(__name__)
 
 
-class GameDatabase:
+class GameDatabase(GameDatabaseStatsMixin, GameDatabaseRegistrationsMixin, GameDatabaseRoomsMixin):
     """Gère la persistance du jeu dans SQLite."""
     
     def __init__(self, db_path: str = "werewolf_game.db"):
@@ -177,12 +180,16 @@ class GameDatabase:
                     'messages_today': player.messages_today,
                     'has_been_pardoned': player.has_been_pardoned,
                     'can_vote': player.can_vote,
+                    'is_jailed': player.is_jailed,
                     'target_user_id': player.target.user_id if player.target else None,
                     'mentor_user_id': player.mentor.user_id if player.mentor else None,
+                    'lover_ids': [p.user_id for p in player.get_lovers()],
                     'role_state': player.role.get_state() if player.role else {},
                     'display_name': player.display_name,
                     'original_role_name': player.original_role_name,
                 }
+
+                lover_id = player.lover.user_id if player.lover else None
                 
                 cursor.execute("""
                     INSERT INTO players (
@@ -197,7 +204,7 @@ class GameDatabase:
                     1 if player.is_alive else 0,
                     1 if player.is_mayor else 0,
                     1 if player.is_protected else 0,
-                    player.lover.user_id if player.lover else None,
+                    lover_id,
                     player.votes_against,
                     json.dumps(player_data)
                 ))
@@ -321,7 +328,7 @@ class GameDatabase:
                     won = False
             elif winner_team == Team.COUPLE:
                 # Couple : les amoureux vivants gagnent
-                if player.lover is not None and player.is_alive:
+                if player.get_lovers() and player.is_alive:
                     won = True
                 elif (player.role and 
                       player.role.role_type == RoleType.CUPIDON
@@ -391,155 +398,8 @@ class GameDatabase:
         self.conn.commit()
         logger.info(f"Résultats de la partie {game_id} sauvegardés")
     
-    def get_leaderboard(self, limit: int = 10) -> list:
-        """Récupère le top des joueurs."""
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            SELECT user_id, pseudo, total_games, total_wins, total_deaths,
-                   CAST(total_wins AS FLOAT) / total_games * 100 as win_rate
-            FROM leaderboard
-            WHERE total_games > 0
-            ORDER BY total_wins DESC, win_rate DESC
-            LIMIT ?
-        """, (limit,))
-        
-        return [dict(row) for row in cursor.fetchall()]
-    
-    def get_role_stats(self) -> list:
-        """Récupère les statistiques par rôle."""
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            SELECT role_type,
-                   COUNT(*) as games_played,
-                   SUM(won) as wins,
-                   CAST(SUM(won) AS FLOAT) / COUNT(*) * 100 as win_rate
-            FROM player_stats
-            GROUP BY role_type
-            ORDER BY win_rate DESC
-        """)
-        
-        return [dict(row) for row in cursor.fetchall()]
-    
-    def get_player_stats(self, user_id: str) -> Optional[Dict]:
-        """Récupère les statistiques d'un joueur."""
-        cursor = self.conn.cursor()
-        
-        # Stats globales
-        cursor.execute("""
-            SELECT * FROM leaderboard WHERE user_id = ?
-        """, (user_id,))
-        
-        global_stats = cursor.fetchone()
-        if not global_stats:
-            return None
-        
-        # Stats par rôle
-        cursor.execute("""
-            SELECT role_type, COUNT(*) as games, SUM(won) as wins
-            FROM player_stats
-            WHERE user_id = ?
-            GROUP BY role_type
-            ORDER BY games DESC
-        """, (user_id,))
-        
-        role_stats = [dict(row) for row in cursor.fetchall()]
-        
-        return {
-            'global': dict(global_stats),
-            'roles': role_stats
-        }
-    
     def close(self):
         """Ferme la connexion à la base de données."""
         if self.conn:
             self.conn.close()
             logger.info("Connexion à la base de données fermée")
-    
-    # ==================== Inscriptions (crash-safe) ====================
-    
-    def save_registration(self, user_id: str, display_name: str):
-        """Sauvegarde une inscription joueur (persistante en cas de crash)."""
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            INSERT OR REPLACE INTO registrations (user_id, display_name, registered_at)
-            VALUES (?, ?, ?)
-        """, (user_id, display_name, datetime.now().isoformat()))
-        self.conn.commit()
-        logger.info(f"Inscription sauvegardée en BDD: {display_name} ({user_id})")
-    
-    def remove_registration(self, user_id: str):
-        """Supprime une inscription joueur."""
-        cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM registrations WHERE user_id = ?", (user_id,))
-        self.conn.commit()
-        logger.info(f"Inscription supprimée: {user_id}")
-    
-    def load_registrations(self) -> Dict[str, str]:
-        """Charge toutes les inscriptions depuis la BDD.
-        
-        Returns:
-            Dict[user_id, display_name]
-        """
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT user_id, display_name FROM registrations")
-        rows = cursor.fetchall()
-        registrations = {row['user_id']: row['display_name'] for row in rows}
-        if registrations:
-            logger.info(f"{len(registrations)} inscription(s) restaurée(s) depuis la BDD")
-        return registrations
-    
-    def clear_registrations(self):
-        """Efface toutes les inscriptions (après démarrage de partie ou annulation)."""
-        cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM registrations")
-        self.conn.commit()
-        logger.info("Inscriptions effacées de la BDD")
-    
-    def has_active_game(self) -> bool:
-        """Vérifie si une partie était en cours (pour détection de crash)."""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT phase FROM game_state WHERE id = 1")
-        row = cursor.fetchone()
-        if not row:
-            return False
-        return row['phase'] not in ('SETUP', 'ENDED')
-
-    # ==================== Salons Matrix (crash-safe) ====================
-
-    def save_room_state(self, rooms: Dict[str, Optional[str]]):
-        """Sauvegarde les IDs des salons Matrix (persistante en cas de crash).
-
-        Args:
-            rooms: Mapping clé → room_id (ex: 'village' → '!abc:server').
-        """
-        cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM room_state")
-        for key, room_id in rooms.items():
-            if room_id:
-                cursor.execute(
-                    "INSERT INTO room_state (key, room_id) VALUES (?, ?)",
-                    (key, room_id),
-                )
-        self.conn.commit()
-        logger.info(f"État des salons sauvegardé ({len(rooms)} entrées)")
-
-    def load_room_state(self) -> Dict[str, str]:
-        """Charge les IDs des salons depuis la BDD.
-
-        Returns:
-            Dict[key, room_id]
-        """
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT key, room_id FROM room_state")
-        rows = cursor.fetchall()
-        rooms = {row['key']: row['room_id'] for row in rows}
-        if rooms:
-            logger.info(f"{len(rooms)} salon(s) restauré(s) depuis la BDD")
-        return rooms
-
-    def clear_room_state(self):
-        """Efface les IDs des salons."""
-        cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM room_state")
-        self.conn.commit()
-        logger.info("État des salons effacé")

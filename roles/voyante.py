@@ -10,6 +10,9 @@ if TYPE_CHECKING:
 
 class Voyante(Role):
     """Voyante - Peut voir le rôle d'un joueur chaque nuit."""
+
+    emoji = "🔮"
+    is_info_role = True
     
     def __init__(self):
         super().__init__(RoleType.VOYANTE, Team.GENTIL)

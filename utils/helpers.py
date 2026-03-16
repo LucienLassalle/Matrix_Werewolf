@@ -30,7 +30,7 @@ def format_player_list(players: List[Player], show_roles: bool = False) -> str:
         if player.is_mayor:
             line += " 👑"
         
-        if player.lover:
+        if player.get_lovers():
             line += " 💕"
         
         result.append(line)

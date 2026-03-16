@@ -34,11 +34,18 @@ ROLE_DISPLAY_NAMES = {
     RoleType.MENTALISTE: "Mentaliste",
     RoleType.DICTATEUR: "Dictateur",
     RoleType.CHASSEUR_DE_TETES: "Chasseur de T\u00eates",
+    RoleType.DETECTIVE: "Détective",
+    RoleType.GEOLIER: "Geôlier",
+    RoleType.ASSASSIN: "Assassin",
+    RoleType.PYROMANE: "Pyromane",
 }
 
 
 class Role(ABC):
     """Classe de base abstraite pour tous les rôles."""
+
+    emoji = "❓"
+    is_info_role = False
     
     def __init__(self, role_type: RoleType, team: Team):
         self.role_type = role_type

@@ -25,6 +25,10 @@ from roles.mercenaire import Mercenaire
 from roles.mentaliste import Mentaliste
 from roles.dictateur import Dictateur
 from roles.chasseur_de_tetes import ChasseurDeTetes
+from roles.assassin import Assassin
+from roles.pyromane import Pyromane
+from roles.detective import Detective
+from roles.geolier import Geolier
 
 
 class RoleFactory:
@@ -54,6 +58,10 @@ class RoleFactory:
         RoleType.MENTALISTE: Mentaliste,
         RoleType.DICTATEUR: Dictateur,
         RoleType.CHASSEUR_DE_TETES: ChasseurDeTetes,
+        RoleType.ASSASSIN: Assassin,
+        RoleType.PYROMANE: Pyromane,
+        RoleType.DETECTIVE: Detective,
+        RoleType.GEOLIER: Geolier,
     }
     
     @classmethod

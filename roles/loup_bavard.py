@@ -34,6 +34,8 @@ _WORD_LIST: List[str] = _load_word_list()
 
 class LoupBavard(Role):
     """Loup-Bavard - Doit prononcer un mot imposé durant la journée."""
+
+    emoji = "🐺🗣️"
     
     def __init__(self):
         super().__init__(RoleType.LOUP_BAVARD, Team.MECHANT)

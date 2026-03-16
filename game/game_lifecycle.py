@@ -48,41 +48,43 @@ class GameLifecycleMixin:
         wolves = [p for p in living_players if p.get_team() == Team.MECHANT]
         gentils = [p for p in living_players if p.get_team() == Team.GENTIL]
 
-        # 1. Couple gagne (les 2 derniers vivants sont amoureux)
-        if len(living_players) == 2:
-            lovers = [p for p in living_players if p.lover and p.lover.is_alive]
-            if len(lovers) == 2:
-                team1 = lovers[0].get_team()
-                team2 = lovers[1].get_team()
-                if team1 == team2:
-                    return team1
+        # 1. Couple gagne (tous les vivants sont amoureux, groupe >= 2)
+        if len(living_players) >= 2:
+            start = next((p for p in living_players if p.get_lovers()), None)
+            group = self.get_love_group(start, alive_only=True) if start else set()
+            if len(group) >= 2 and len(group) == len(living_players):
+                teams = {p.get_team() for p in group}
+                if len(teams) == 1:
+                    return next(iter(teams))
                 return Team.COUPLE
 
         # 1b. Couple + Cupidon gagnent (si option activée)
-        if self.cupidon_wins_with_couple and len(living_players) == 3:
-            lovers = [p for p in living_players if p.lover and p.lover.is_alive]
-            if len(lovers) == 2:
-                non_lovers = [p for p in living_players if p not in lovers]
+        if self.cupidon_wins_with_couple and len(living_players) >= 3:
+            start = next((p for p in living_players if p.get_lovers()), None)
+            group = self.get_love_group(start, alive_only=True) if start else set()
+            if len(group) >= 2 and len(group) < len(living_players):
+                non_lovers = [p for p in living_players if p not in group]
                 if (len(non_lovers) == 1 and non_lovers[0].role
                         and non_lovers[0].role.role_type == RoleType.CUPIDON):
-                    team1 = lovers[0].get_team()
-                    team2 = lovers[1].get_team()
-                    if team1 == team2:
-                        return team1
+                    teams = {p.get_team() for p in group}
+                    if len(teams) == 1:
+                        return next(iter(teams))
                     return Team.COUPLE
 
-        # 2. Loup Blanc seul survivant
+        # 2. Tueur solo survivant
         if len(living_players) == 1:
             sole = living_players[0]
-            if sole.role and sole.role.role_type == RoleType.LOUP_BLANC:
+            if sole.role and sole.role.role_type in {
+                RoleType.LOUP_BLANC, RoleType.ASSASSIN, RoleType.PYROMANE
+            }:
                 return Team.NEUTRE
 
-        # 3. Village gagne (plus aucun loup vivant)
-        if not wolves:
+        # 3. Village gagne (plus aucun loup vivant ET au moins un gentil vivant)
+        if not wolves and gentils:
             return Team.GENTIL
 
-        # 4. Loups gagnent (plus aucun GENTIL vivant)
-        if not gentils:
+        # 4. Loups gagnent (plus aucun GENTIL vivant ET au moins un loup vivant)
+        if not gentils and wolves:
             regular_wolves = [
                 p for p in wolves
                 if not p.role or p.role.role_type != RoleType.LOUP_BLANC
@@ -165,12 +167,11 @@ class GameLifecycleMixin:
         if not player.is_alive:
             return []
 
-        lover = player.lover if player.lover and player.lover.is_alive else None
+        group = self.get_love_group(player)
+        alive_group = [p for p in group if p.is_alive]
         player.kill()
 
-        dead_players = [player]
-        if lover and not lover.is_alive:
-            dead_players.append(lover)
+        dead_players = [p for p in alive_group if not p.is_alive]
 
         for dead in dead_players:
             self.mute_dead_player(dead.user_id)

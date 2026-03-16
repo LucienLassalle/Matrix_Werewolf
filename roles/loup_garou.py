@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 class LoupGarou(Role):
     """Loup-Garou - Vote chaque nuit pour tuer quelqu'un."""
+
+    emoji = "🐺"
     
     def __init__(self):
         super().__init__(RoleType.LOUP_GAROU, Team.MECHANT)

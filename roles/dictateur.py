@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 class Dictateur(Role):
     """Dictateur - Peut prendre le pouvoir et forcer un vote."""
+
+    emoji = "⚡"
     
     def __init__(self):
         super().__init__(RoleType.DICTATEUR, Team.GENTIL)

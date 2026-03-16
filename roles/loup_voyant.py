@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 class LoupVoyant(Role):
     """Loup-Voyant - Peut voir les rôles mais ne peut pas voter (sauf conditions)."""
+
+    emoji = "🐺🔮"
     
     def __init__(self):
         super().__init__(RoleType.LOUP_VOYANT, Team.MECHANT)
@@ -18,6 +20,7 @@ class LoupVoyant(Role):
     
     def get_description(self) -> str:
         return ("Loup-Voyant - Vous pouvez voir les rôles chaque nuit, mais vous ne pouvez pas voter. "
+                "Vous pouvez choisir de renoncer à votre pouvoir de voyance à tout moment pour rejoindre la meute et voter avec les loups. "
                 "Si vous êtes le dernier loup, vous devenez un loup normal.")
     
     def can_act_at_night(self) -> bool:

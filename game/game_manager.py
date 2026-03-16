@@ -7,6 +7,7 @@ La logique est répartie via mixins :
 """
 
 from typing import Dict, List, Optional
+import math
 import random
 import uuid
 from datetime import datetime
@@ -22,12 +23,13 @@ from game.vote_manager import VoteManager
 from game.action_manager import ActionManager
 from game.game_phases import PhaseManagerMixin
 from game.game_lifecycle import GameLifecycleMixin
+from game.game_persistence import GamePersistenceMixin
 from database.game_db import GameDatabase
 
 logger = logging.getLogger(__name__)
 
 
-class GameManager(PhaseManagerMixin, GameLifecycleMixin):
+class GameManager(PhaseManagerMixin, GameLifecycleMixin, GamePersistenceMixin):
     """Gestionnaire principal du jeu Loup-Garou."""
 
     # Rôles obligatoires pour toute partie
@@ -67,6 +69,9 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
         # Morts différées (initialisé ici pour éviter AttributeError)
         self._pending_kills: List[Player] = []
 
+        # Geolier (prison)
+        self._jailed_user_id: Optional[str] = None
+
         # Configuration Cupidon
         self.cupidon_wins_with_couple = True
 
@@ -92,6 +97,7 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
         self.start_time = None
         self._pending_mayor_succession = None
         self.mayor_election_done = False
+        self._jailed_user_id = None
         logger.info("GameManager réinitialisé pour une nouvelle partie")
 
     # ==================== Gestion des joueurs ====================
@@ -162,6 +168,42 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
         """Retourne la liste des joueurs vivants."""
         return [p for p in self.players.values() if p.is_alive]
 
+    def get_jailer_and_prisoner(self) -> tuple[Optional[Player], Optional[Player]]:
+        """Retourne le geolier et son prisonnier actuel, si present."""
+        jailer = None
+        prisoner = None
+        for player in self.players.values():
+            if player.role and player.role.role_type == RoleType.GEOLIER:
+                jailer = player
+                break
+
+        if not jailer or not jailer.role or not jailer.is_alive:
+            return None, None
+
+        prisoner_uid = getattr(jailer.role, 'prisoner_user_id', None)
+        if prisoner_uid and prisoner_uid in self.players:
+            prisoner = self.players[prisoner_uid]
+
+        if prisoner and not prisoner.is_alive:
+            prisoner = None
+
+        return jailer, prisoner
+
+    def is_player_jailed(self, user_id: str) -> bool:
+        """Indique si un joueur est actuellement emprisonne."""
+        return self._jailed_user_id == user_id
+
+    def set_jailed_player(self, prisoner: Optional[Player]):
+        """Met a jour l'etat d'emprisonnement pour la nuit."""
+        for player in self.players.values():
+            player.is_jailed = False
+
+        if prisoner and prisoner.is_alive:
+            prisoner.is_jailed = True
+            self._jailed_user_id = prisoner.user_id
+        else:
+            self._jailed_user_id = None
+
     def get_living_wolves(self) -> List[Player]:
         """Retourne la liste des loups vivants."""
         return [p for p in self.get_living_players() if p.get_team() == Team.MECHANT]
@@ -197,6 +239,42 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
 
         return neighbors
 
+    def get_love_group(self, player: Player, alive_only: bool = False) -> set[Player]:
+        """Retourne le groupe d'amoureux connecte a un joueur."""
+        if not player:
+            return set()
+
+        visited: set[Player] = set()
+        stack = [player]
+        while stack:
+            current = stack.pop()
+            if current in visited:
+                continue
+            if alive_only and not current.is_alive:
+                continue
+            visited.add(current)
+            for lover in current.get_lovers():
+                if lover not in visited:
+                    stack.append(lover)
+        return visited
+
+    def get_love_groups(self, alive_only: bool = False) -> list[set[Player]]:
+        """Retourne la liste des groupes d'amoureux (taille >= 2)."""
+        groups: list[set[Player]] = []
+        visited: set[Player] = set()
+        for player in self.players.values():
+            if player in visited:
+                continue
+            if alive_only and not player.is_alive:
+                continue
+            if not player.get_lovers():
+                continue
+            group = self.get_love_group(player, alive_only=alive_only)
+            if len(group) >= 2:
+                groups.append(group)
+                visited.update(group)
+        return groups
+
     def get_available_roles(self) -> List[Role]:
         """Retourne les rôles non assignés."""
         assigned_roles = [p.role for p in self.players.values() if p.role]
@@ -216,10 +294,29 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
                 name = ROLE_DISPLAY_NAMES.get(role_type, role_type.value)
                 return {"success": False, "message": f"Le rôle {name} est désactivé"}
 
+        if (RoleType.ASSASSIN in role_config or RoleType.PYROMANE in role_config):
+            if len(self.players) < 8:
+                return {
+                    "success": False,
+                    "message": "Assassin et Pyromane ne sont disponibles qu'a partir de 8 joueurs",
+                }
+
         roles = []
         for role_type, count in role_config.items():
             for _ in range(count):
                 roles.append(RoleFactory.create_role(role_type))
+
+        if RoleType.ASSASSIN in role_config or RoleType.PYROMANE in role_config:
+            total_players = max(len(roles), len(self.players))
+            evilish_count = sum(
+                1 for r in roles if r.team in (Team.MECHANT, Team.NEUTRE)
+            )
+            ratio = evilish_count / total_players if total_players else 0
+            if ratio < 0.20:
+                return {
+                    "success": False,
+                    "message": "Le ratio neutre + mechant doit etre au moins 20%",
+                }
 
         if len(roles) < len(self.players):
             while len(roles) < len(self.players):
@@ -234,6 +331,7 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
             if count > 1:
                 return {"success": False, "message": f"Maximum 1 {mandatory_rt.value} autorisé (trouvé: {count})"}
 
+
         self.available_roles = roles
         return {"success": True, "message": f"{len(roles)} rôles configurés"}
 
@@ -247,12 +345,20 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
         errors = []
         role_types = [r.role_type for r in roles]
 
+
         wolf_types = {
             RoleType.LOUP_GAROU, RoleType.LOUP_BLANC,
             RoleType.LOUP_NOIR, RoleType.LOUP_BAVARD, RoleType.LOUP_VOYANT,
         }
-        if not any(rt in wolf_types for rt in role_types):
+        wolf_count = sum(1 for rt in role_types if rt in wolf_types)
+        if wolf_count == 0:
             errors.append("Il faut au moins un rôle méchant (Loup-Garou) dans la partie")
+        else:
+            min_wolves = self._min_wolf_count(len(roles))
+            if wolf_count < min_wolves:
+                errors.append(
+                    f"Il faut au moins {min_wolves} rôle(s) méchant(s) (25% minimum)"
+                )
 
         for mandatory in self.MANDATORY_ROLES:
             if mandatory in self.disabled_roles:
@@ -261,6 +367,27 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
                 errors.append(f"Le rôle {mandatory.value} est obligatoire")
 
         return {"valid": len(errors) == 0, "errors": errors}
+
+    def _min_wolf_count(self, total_players: int) -> int:
+        """Retourne le nombre minimal de loups requis pour une partie."""
+        if total_players <= 5:
+            return 1
+        return max(1, int(math.ceil(total_players * 0.25)))
+
+    def _max_info_count(self, total_players: int) -> int:
+        """Retourne le nombre maximal de roles a information (30% max)."""
+        return max(1, int(math.floor(total_players * 0.30)))
+
+    def _role_types_by(self, predicate) -> list[RoleType]:
+        """Retourne les RoleType filtrés par un prédicat sur les instances de rôle."""
+        results: list[RoleType] = []
+        for rt in RoleFactory.get_available_roles():
+            if rt in self.disabled_roles:
+                continue
+            role = RoleFactory.create_role(rt)
+            if predicate(role):
+                results.append(rt)
+        return results
 
     def _auto_configure_roles(self):
         """Configure automatiquement les rôles basé sur le nombre de joueurs.
@@ -272,10 +399,53 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
         """
         n = len(self.players)
 
-        # ── Calcul du nombre de méchants (~20-25%) ──
-        evil_ratio = random.uniform(0.20, 0.25)
-        evil_count = max(1, round(n * evil_ratio))
-        good_count = n - evil_count
+        if n == 4:
+            roles = [RoleFactory.create_role(RoleType.LOUP_GAROU)]
+            for rt in [RoleType.CHASSEUR, RoleType.SORCIERE, RoleType.VOYANTE]:
+                if rt not in self.disabled_roles:
+                    roles.append(RoleFactory.create_role(rt))
+            while len(roles) < n:
+                roles.append(RoleFactory.create_role(RoleType.VILLAGEOIS))
+            self.available_roles = roles
+            return
+
+        if n == 5:
+            roles = [RoleFactory.create_role(RoleType.LOUP_GAROU)]
+            for rt in [RoleType.CHASSEUR, RoleType.SORCIERE, RoleType.VOYANTE]:
+                if rt not in self.disabled_roles:
+                    roles.append(RoleFactory.create_role(rt))
+
+            non_info_candidates = self._role_types_by(
+                lambda r: (
+                    r.team == Team.GENTIL
+                    and not r.is_info_role
+                    and r.role_type not in self.MANDATORY_ROLES
+                    and r.role_type != RoleType.VILLAGEOIS
+                )
+            )
+            if non_info_candidates:
+                roles.append(RoleFactory.create_role(random.choice(non_info_candidates)))
+
+            while len(roles) < n:
+                roles.append(RoleFactory.create_role(RoleType.VILLAGEOIS))
+            self.available_roles = roles
+            return
+
+        evil_count = self._min_wolf_count(n)
+
+        neutral_pool = self._role_types_by(
+            lambda r: r.team == Team.NEUTRE
+        )
+
+        neutral_count = 0
+        if n >= 8 and neutral_pool and random.random() < 0.35:
+            neutral_count = 1
+
+        good_count = n - (evil_count + neutral_count)
+        mandatory_good = [rt for rt in self.MANDATORY_ROLES if rt not in self.disabled_roles]
+        if good_count < len(mandatory_good):
+            neutral_count = 0
+            good_count = n - evil_count
 
         # ── Attribution des rôles méchants ──
         evil_roles: list = []
@@ -292,75 +462,65 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
             else:
                 evil_roles.append(RoleFactory.create_role(RoleType.LOUP_GAROU))
 
+        # ── Attribution des rôles neutres ──
+        neutral_roles: list = []
+        if neutral_count > 0 and neutral_pool:
+            random.shuffle(neutral_pool)
+            neutral_roles = [RoleFactory.create_role(neutral_pool[0])]
+
         # ── Attribution des rôles gentils ──
-        good_roles: list = [
-            RoleFactory.create_role(rt)
-            for rt in [RoleType.SORCIERE, RoleType.VOYANTE, RoleType.CHASSEUR]
-            if rt not in self.disabled_roles
-        ]
+        good_roles: list = [RoleFactory.create_role(rt) for rt in mandatory_good]
         good_roles = good_roles[:good_count]
 
-        unique_good = [
-            rt for rt in [
-                RoleType.CUPIDON, RoleType.VOLEUR,
-                RoleType.IDIOT, RoleType.CORBEAU,
-                RoleType.MONTREUR_OURS, RoleType.MERCENAIRE, RoleType.MENTALISTE,
-                RoleType.DICTATEUR, RoleType.ENFANT_SAUVAGE,
-                RoleType.CHASSEUR_DE_TETES,
-            ]
-            if rt not in self.disabled_roles
-        ]
-        if evil_count >= 2:
-            if RoleType.PETITE_FILLE not in self.disabled_roles:
-                unique_good.append(RoleType.PETITE_FILLE)
+        info_count = sum(1 for r in good_roles if r.is_info_role)
+        target_info = max(2, round(n * 0.25))
+        target_info = min(target_info, self._max_info_count(n))
+        target_info = max(target_info, info_count)
+        target_info = min(target_info, good_count)
 
-        power_good = [
-            rt for rt in [
-                RoleType.VOYANTE_AURA,
-                RoleType.GARDE, RoleType.MEDIUM,
-            ]
-            if rt not in self.disabled_roles
-        ]
+        info_pool = self._role_types_by(
+            lambda r: (
+                r.team == Team.GENTIL
+                and r.is_info_role
+                and r.role_type not in self.MANDATORY_ROLES
+            )
+        )
+        if evil_count < 2:
+            info_pool = [rt for rt in info_pool if rt != RoleType.PETITE_FILLE]
 
-        assigned_power_counts: dict = {
-            RoleType.SORCIERE: 1,
-            RoleType.VOYANTE: 1,
-            RoleType.CHASSEUR: 1,
-        }
+        random.shuffle(info_pool)
+        cupidon_added = any(r.role_type == RoleType.CUPIDON for r in good_roles)
+        while len(good_roles) < good_count and info_count < target_info and info_pool:
+            rt = info_pool.pop()
+            if rt == RoleType.CUPIDON and cupidon_added:
+                continue
+            good_roles.append(RoleFactory.create_role(rt))
+            if rt == RoleType.CUPIDON:
+                cupidon_added = True
+            info_count += 1
 
-        available_unique = list(unique_good)
-        random.shuffle(available_unique)
+        non_info_pool = self._role_types_by(
+            lambda r: (
+                r.team == Team.GENTIL
+                and not r.is_info_role
+                and r.role_type not in self.MANDATORY_ROLES
+                and r.role_type != RoleType.VILLAGEOIS
+            )
+        )
+        random.shuffle(non_info_pool)
 
-        for rt in available_unique:
-            if len(good_roles) >= good_count:
-                break
-            if random.random() < 0.40:
-                good_roles.append(RoleFactory.create_role(rt))
+        while len(good_roles) < good_count and non_info_pool:
+            rt = non_info_pool.pop()
+            if rt == RoleType.CUPIDON and cupidon_added:
+                continue
+            good_roles.append(RoleFactory.create_role(rt))
+            if rt == RoleType.CUPIDON:
+                cupidon_added = True
 
-        available_power = list(power_good)
-        random.shuffle(available_power)
-
-        for rt in available_power:
-            if len(good_roles) >= good_count:
-                break
-            if random.random() < 0.50:
-                good_roles.append(RoleFactory.create_role(rt))
-                assigned_power_counts[rt] = assigned_power_counts.get(rt, 0) + 1
-
-        non_duplicable = {RoleType.SORCIERE, RoleType.VOYANTE, RoleType.CHASSEUR}
         while len(good_roles) < good_count:
-            if n >= 10 and random.random() < 0.12:
-                rt = random.choice(power_good)
-                if rt not in non_duplicable:
-                    count = assigned_power_counts.get(rt, 0)
-                    if count < 2:
-                        good_roles.append(RoleFactory.create_role(rt))
-                        assigned_power_counts[rt] = count + 1
-                        continue
-
             good_roles.append(RoleFactory.create_role(RoleType.VILLAGEOIS))
 
-        self.available_roles = evil_roles + good_roles
+        self.available_roles = evil_roles + neutral_roles + good_roles
 
     # ==================== Résumé des rôles ====================
 
@@ -378,7 +538,8 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
                 'count': count,
                 'name': role.name,
                 'description': role.description,
-                'team': role.team
+                'team': role.team,
+                'emoji': role.emoji,
             }
         return summary
 
@@ -388,228 +549,3 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin):
         """Ajoute un message au log de la partie."""
         self.game_log.append(message)
 
-    def get_game_state(self) -> dict:
-        """Retourne l'état actuel de la partie."""
-        return {
-            "phase": self.phase.value,
-            "day": self.day_count,
-            "night": self.night_count,
-            "living_players": len(self.get_living_players()),
-            "total_players": len(self.players),
-            "wolves_alive": len(self.get_living_wolves()),
-            "players": [
-                {
-                    "pseudo": p.pseudo,
-                    "is_alive": p.is_alive,
-                    "role": p.role.role_type.value if p.role else None,
-                    "is_mayor": p.is_mayor,
-                    "can_vote": p.can_vote
-                }
-                for p in self.players.values()
-            ]
-        }
-
-    def save_state(self):
-        """Sauvegarde l'état du jeu dans la base de données."""
-        try:
-            votes_by_target: Dict[str, List[str]] = {}
-            for voter_uid, target_uid in self.vote_manager.votes.items():
-                if target_uid not in votes_by_target:
-                    votes_by_target[target_uid] = []
-                votes_by_target[target_uid].append(voter_uid)
-
-            wolf_votes_by_target: Dict[str, List[str]] = {}
-            for voter_uid, target_uid in self.vote_manager.wolf_votes.items():
-                if target_uid not in wolf_votes_by_target:
-                    wolf_votes_by_target[target_uid] = []
-                wolf_votes_by_target[target_uid].append(voter_uid)
-
-            # Sérialiser les votes pour le maire
-            mayor_votes = dict(self.vote_manager.mayor_votes_for)
-
-            self.db.save_game_state(
-                phase=self.phase,
-                day_count=self.day_count,
-                start_time=self.start_time,
-                players=self.players,
-                votes=votes_by_target,
-                wolf_votes=wolf_votes_by_target,
-                additional_data={
-                    'game_id': self.game_id,
-                    'night_count': self.night_count,
-                    'player_order': self._player_order,
-                    'mayor_election_done': self.mayor_election_done,
-                    'cupidon_wins_with_couple': self.cupidon_wins_with_couple,
-                    'mayor_votes': mayor_votes,
-                    'pending_mayor_succession_uid': (
-                        self._pending_mayor_succession.user_id
-                        if self._pending_mayor_succession else None
-                    ),
-                    'game_log': self.game_log,
-                    'extra_roles': [
-                        r.role_type.value for r in self.extra_roles
-                    ],
-                }
-            )
-            logger.info("État du jeu sauvegardé")
-        except Exception as e:
-            logger.error(f"Erreur lors de la sauvegarde: {e}")
-
-    def load_state(self) -> bool:
-        """Restaure l'état complet du jeu depuis la base de données.
-
-        Returns:
-            True si l'état a été restauré avec succès, False sinon.
-        """
-        try:
-            data = self.db.load_game_state()
-            if not data:
-                logger.info("Aucun état de jeu à restaurer")
-                return False
-
-            # 1. Phase et compteurs
-            self.phase = GamePhase(data['phase'])
-            self.day_count = data['day_count']
-            if data.get('start_time'):
-                self.start_time = datetime.fromisoformat(data['start_time'])
-
-            additional = data.get('game_data', {}).get('additional', {})
-            self.night_count = additional.get('night_count', 0)
-            self.game_id = additional.get('game_id', self.game_id)
-            self.mayor_election_done = additional.get('mayor_election_done', False)
-            self.cupidon_wins_with_couple = additional.get(
-                'cupidon_wins_with_couple', self.cupidon_wins_with_couple
-            )
-            self.game_log = additional.get('game_log', [])
-
-            # 2. Recréer les joueurs
-            self.players.clear()
-            self._player_order.clear()
-
-            for p_data in data['players']:
-                uid = p_data['user_id']
-                pseudo = p_data['pseudo']
-                player = Player(pseudo, uid)
-                player.is_alive = bool(p_data['is_alive'])
-                player.is_mayor = bool(p_data['is_mayor'])
-                player.is_protected = bool(p_data['is_protected'])
-                player.votes_against = p_data.get('votes_against', 0)
-
-                # Données étendues du joueur
-                player_extra = {}
-                if p_data.get('player_data'):
-                    import json
-                    player_extra = (
-                        json.loads(p_data['player_data'])
-                        if isinstance(p_data['player_data'], str)
-                        else p_data['player_data']
-                    )
-                player.has_been_pardoned = player_extra.get('has_been_pardoned', False)
-                player.can_vote = player_extra.get('can_vote', True)
-                if player_extra.get('display_name'):
-                    player.display_name = player_extra['display_name']
-                if player_extra.get('original_role_name'):
-                    player.original_role_name = player_extra['original_role_name']
-
-                # Recréer le rôle
-                if p_data.get('role_type'):
-                    role_type = RoleType(p_data['role_type'])
-                    role = RoleFactory.create_role(role_type)
-                    role.assign_to_player(player)
-
-                    # Restaurer l'état interne du rôle
-                    role_state = player_extra.get('role_state', {})
-                    if role_state:
-                        role.restore_state(role_state, {})  # players dict rempli en 2ème passe
-
-                self.players[uid] = player
-                self.vote_manager.register_player(player)
-
-            # Restaurer l'ordre d'assise
-            saved_order = additional.get('player_order', [])
-            if saved_order:
-                self._player_order = [
-                    uid for uid in saved_order if uid in self.players
-                ]
-            else:
-                self._player_order = list(self.players.keys())
-
-            # 3. Seconde passe : résoudre les références inter-joueurs (lover, mentor, target)
-            for p_data in data['players']:
-                uid = p_data['user_id']
-                player = self.players.get(uid)
-                if not player:
-                    continue
-
-                player_extra = {}
-                if p_data.get('player_data'):
-                    import json
-                    player_extra = (
-                        json.loads(p_data['player_data'])
-                        if isinstance(p_data['player_data'], str)
-                        else p_data['player_data']
-                    )
-
-                # Lover
-                lover_uid = p_data.get('lover_id')
-                if lover_uid and lover_uid in self.players:
-                    player.lover = self.players[lover_uid]
-
-                # Mentor (enfant sauvage)
-                mentor_uid = player_extra.get('mentor_user_id')
-                if mentor_uid and mentor_uid in self.players:
-                    player.mentor = self.players[mentor_uid]
-
-                # Target (mercenaire)
-                target_uid = player_extra.get('target_user_id')
-                if target_uid and target_uid in self.players:
-                    player.target = self.players[target_uid]
-
-                # Seconde passe de restore_state avec les joueurs résolus
-                if player.role:
-                    role_state = player_extra.get('role_state', {})
-                    if role_state:
-                        player.role.restore_state(role_state, self.players)
-
-            # 4. Restaurer les votes
-            self.vote_manager.votes.clear()
-            self.vote_manager.wolf_votes.clear()
-            self.vote_manager.mayor_votes_for.clear()
-
-            for vote_row in data.get('village_votes', []):
-                voter_id = vote_row['voter_id']
-                target_id = vote_row['target_id']
-                self.vote_manager.votes[voter_id] = target_id
-
-            for vote_row in data.get('wolf_votes', []):
-                voter_id = vote_row['voter_id']
-                target_id = vote_row['target_id']
-                self.vote_manager.wolf_votes[voter_id] = target_id
-
-            # Restaurer les votes pour le maire depuis additional_data
-            saved_mayor_votes = additional.get('mayor_votes', {})
-            for voter_uid, target_uid in saved_mayor_votes.items():
-                self.vote_manager.mayor_votes_for[voter_uid] = target_uid
-
-            # 5. Succession de maire en attente
-            pending_uid = additional.get('pending_mayor_succession_uid')
-            if pending_uid and pending_uid in self.players:
-                self._pending_mayor_succession = self.players[pending_uid]
-
-            # 6. Extra roles (cartes supplémentaires du Voleur)
-            self.extra_roles.clear()
-            for rt_val in additional.get('extra_roles', []):
-                try:
-                    self.extra_roles.append(RoleFactory.create_role(RoleType(rt_val)))
-                except (ValueError, KeyError):
-                    pass
-
-            logger.info(
-                "État du jeu restauré (phase=%s, jour=%d, nuit=%d, joueurs=%d)",
-                self.phase.value, self.day_count, self.night_count, len(self.players),
-            )
-            return True
-
-        except Exception as e:
-            logger.error(f"Erreur lors de la restauration de l'état: {e}", exc_info=True)
-            return False

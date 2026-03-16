@@ -32,6 +32,12 @@ class CommandHandler:
             "convertir": self.handle_convert,
             "dictateur": self.handle_dictator,
             "maire": self.handle_maire,
+            "assassin": self.handle_assassin,
+            "pyromane": self.handle_pyromane_soak,
+            "pyromane-brule": self.handle_pyromane_ignite,
+            "detective": self.handle_detective,
+            "geolier": self.handle_geolier_select,
+            "geolier-tuer": self.handle_geolier_execute,
         }
 
     @property
@@ -58,6 +64,9 @@ class CommandHandler:
                                    and self.game._pending_mayor_succession == player)
             if not is_chasseur_tuer and not is_maire_succession:
                 return {"success": False, "message": "Vous êtes mort.e"}
+
+        if player.is_jailed and command != "msg":
+            return {"success": False, "message": "Vous etes en prison et ne pouvez pas agir"}
         
         handler = self.commands.get(command)
         if not handler:
@@ -395,3 +404,99 @@ class CommandHandler:
             return {"success": False, "message": "Vous devez désigner un joueur vivant"}
         
         return self.game.designate_mayor(target)
+
+    def handle_assassin(self, player: Player, args: list) -> dict:
+        """Gère assassin {pseudo}."""
+        if not args:
+            return {"success": False, "message": f"Usage : {self.prefix}assassin {{pseudo}}"}
+
+        target = self.game.get_player_by_pseudo(args[0])
+        if not target:
+            return {"success": False, "message": f"Joueur {args[0]} non trouvé"}
+
+        if not player.role or player.role.role_type != RoleType.ASSASSIN:
+            return {"success": False, "message": "Vous n'etes pas l'Assassin"}
+
+        result = player.role.perform_action(self.game, ActionType.ASSASSIN_KILL, target)
+        if result["success"]:
+            self.game.action_manager.register_action(player, ActionType.ASSASSIN_KILL, target)
+        return result
+
+    def handle_pyromane_soak(self, player: Player, args: list) -> dict:
+        """Gère pyromane {pseudo}."""
+        if not args:
+            return {"success": False, "message": f"Usage : {self.prefix}pyromane {{pseudo}}"}
+
+        target = self.game.get_player_by_pseudo(args[0])
+        if not target:
+            return {"success": False, "message": f"Joueur {args[0]} non trouvé"}
+
+        if not player.role or player.role.role_type != RoleType.PYROMANE:
+            return {"success": False, "message": "Vous n'etes pas le Pyromane"}
+
+        result = player.role.perform_action(self.game, ActionType.PYROMANE_SOAK, target)
+        if result["success"]:
+            self.game.action_manager.register_action(player, ActionType.PYROMANE_SOAK, target)
+        return result
+
+    def handle_pyromane_ignite(self, player: Player, args: list) -> dict:
+        """Gère pyromane-brule."""
+        if not player.role or player.role.role_type != RoleType.PYROMANE:
+            return {"success": False, "message": "Vous n'etes pas le Pyromane"}
+
+        result = player.role.perform_action(self.game, ActionType.PYROMANE_IGNITE)
+        if result["success"]:
+            self.game.action_manager.register_action(player, ActionType.PYROMANE_IGNITE)
+        return result
+
+    def handle_detective(self, player: Player, args: list) -> dict:
+        """Gère detective {pseudo1} {pseudo2}."""
+        if len(args) < 2:
+            return {"success": False, "message": f"Usage : {self.prefix}detective {{pseudo1}} {{pseudo2}}"}
+
+        target1 = self.game.get_player_by_pseudo(args[0])
+        target2 = self.game.get_player_by_pseudo(args[1])
+        if not target1 or not target2:
+            return {"success": False, "message": "Un des joueurs n'a pas été trouvé"}
+
+        if not player.role or player.role.role_type != RoleType.DETECTIVE:
+            return {"success": False, "message": "Vous n'etes pas le Detective"}
+
+        return player.role.perform_action(self.game, ActionType.DETECTIVE_CHECK, None, target1=target1, target2=target2)
+
+    def handle_geolier_select(self, player: Player, args: list) -> dict:
+        """Gère geolier {pseudo}."""
+        if not args:
+            return {"success": False, "message": f"Usage : {self.prefix}geolier {{pseudo}}"}
+
+        target = self.game.get_player_by_pseudo(args[0])
+        if not target:
+            return {"success": False, "message": f"Joueur {args[0]} non trouvé"}
+
+        if not player.role or player.role.role_type != RoleType.GEOLIER:
+            return {"success": False, "message": "Vous n'etes pas le Geolier"}
+
+        return player.role.perform_action(self.game, ActionType.JAIL_SELECT, target)
+
+    def handle_geolier_execute(self, player: Player, args: list) -> dict:
+        """Gère geolier-tuer."""
+        if not player.role or player.role.role_type != RoleType.GEOLIER:
+            return {"success": False, "message": "Vous n'etes pas le Geolier"}
+
+        role = player.role
+        result = role.perform_action(self.game, ActionType.JAIL_EXECUTE)
+        if not result["success"]:
+            return result
+
+        prisoner_uid = getattr(role, 'prisoner_user_id', None)
+        prisoner = self.game.get_player(prisoner_uid) if prisoner_uid else None
+        if not prisoner or not prisoner.is_alive:
+            return {"success": False, "message": "Le prisonnier n'est plus valide"}
+
+        deaths = self.game.kill_player(prisoner, killed_during_day=False)
+        role.prisoner_user_id = None
+        return {
+            "success": True,
+            "message": f"Vous executez {prisoner.pseudo}",
+            "deaths": deaths,
+        }

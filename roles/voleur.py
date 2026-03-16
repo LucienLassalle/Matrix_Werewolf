@@ -21,6 +21,8 @@ class Voleur(Role):
     Si le Voleur tire 2 cartes mais ne choisit pas, la première
     est automatiquement assignée à la fin de la nuit.
     """
+
+    emoji = "🎭"
     
     def __init__(self):
         super().__init__(RoleType.VOLEUR, Team.GENTIL)

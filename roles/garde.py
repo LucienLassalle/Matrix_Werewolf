@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 class Garde(Role):
     """Garde - Protège un joueur chaque nuit."""
+
+    emoji = "🛡️"
     
     def __init__(self):
         super().__init__(RoleType.GARDE, Team.GENTIL)

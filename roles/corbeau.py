@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 class Corbeau(Role):
     """Corbeau - Rajoute 2 votes sur quelqu'un chaque nuit."""
+
+    emoji = "🐦"
     
     def __init__(self):
         super().__init__(RoleType.CORBEAU, Team.GENTIL)

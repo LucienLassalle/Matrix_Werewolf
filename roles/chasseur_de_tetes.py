@@ -20,6 +20,7 @@ class ChasseurDeTetes(Role):
       le Chasseur de Têtes rejoint l'alliance du mal : il gagne si les
       loups-garous ou un tueur solo remportent la partie.
     """
+    emoji = "🎯💀"
 
     def __init__(self):
         super().__init__(RoleType.CHASSEUR_DE_TETES, Team.NEUTRE)
