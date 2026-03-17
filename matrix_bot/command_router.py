@@ -545,6 +545,16 @@ class CommandRouterMixin:
             # Annuler le timeout du chasseur si tir réussi
             if result.get('success') and command == 'tuer':
                 self._cancel_chasseur_timeout(user_id)
+                if player.role and player.role.role_type == RoleType.CHASSEUR:
+                    try:
+                        await self.room_manager.add_to_dead(user_id)
+                        logger.info("☠️ %s invité au cimetière (tir du Chasseur)", user_id)
+                    except Exception as e:
+                        logger.error(
+                            "Erreur invitation cimetière (tir du Chasseur) pour %s: %s",
+                            user_id,
+                            e,
+                        )
 
             # Traiter les morts instantanées (Chasseur, Dictateur)
             if result.get('success') and result.get('deaths'):

@@ -456,6 +456,7 @@ class BotLifecycleMixin:
         seating_message = self._build_seating_message()
         seating_message_event_id = await self.room_manager.send_to_village(seating_message)
         if seating_message_event_id and self.room_manager.village_room:
+            self._seating_message_event_id = seating_message_event_id
             await self.client.pin_message(self.room_manager.village_room, seating_message_event_id)
 
         await self._create_special_rooms()

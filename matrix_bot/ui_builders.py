@@ -55,18 +55,26 @@ class UIBuildersMixin:
         if not order:
             return ""
 
-        names = [
-            self.game_manager.players[uid].display_name
-            for uid in order
-            if uid in self.game_manager.players
-        ]
+        names = []
+        for uid in order:
+            player = self.game_manager.players.get(uid)
+            if not player:
+                continue
+            display = player.display_name
+            if player.is_alive:
+                names.append(f"**{display}**")
+            else:
+                names.append(f"~~**{display}**~~")
 
-        chain = " ↔ ".join(f"**{n}**" for n in names)
+        if not names:
+            return ""
+
+        chain = " ↔ ".join(names)
 
         return (
             "🪑 **Ordre d'assise (cercle) :**\n\n"
             f"{chain}\n\n"
-            f"↩️ *{names[-1]}* et *{names[0]}* sont côte à côte (le cercle est fermé)."
+            f"↩️ {names[-1]} et {names[0]} sont côte à côte (le cercle est fermé)."
         )
 
     def _build_statut_message(self: 'WerewolfBot') -> str:

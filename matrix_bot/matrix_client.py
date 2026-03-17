@@ -1,8 +1,7 @@
 """Client Matrix pour le bot Loup-Garou."""
 
-from nio import AsyncClient, MatrixRoom, RoomMessageText, LoginError
+from nio import AsyncClient, RoomPreset, RoomVisibility
 from typing import Optional, List, Dict
-import asyncio
 import aiohttp
 import logging
 
@@ -14,6 +13,17 @@ logger = logging.getLogger(__name__)
 
 class MatrixClientWrapper(MatrixClientRoomsMixin, MatrixClientDMMixin):
     """Wrapper pour le client Matrix avec fonctionnalités spécifiques au jeu."""
+
+    @staticmethod
+    def _format_message_html(message: str) -> str:
+        import re
+        html = message
+        html = re.sub(r'~~(.+?)~~', r'<del>\1</del>', html)
+        html = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', html)
+        html = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', html)
+        html = re.sub(r'`(.+?)`', r'<code>\1</code>', html)
+        html = html.replace("\n", "<br>")
+        return html
     
     def __init__(self, homeserver: str, user_id: str, access_token: str,
                  password: str | None = None):
@@ -224,17 +234,7 @@ class MatrixClientWrapper(MatrixClientRoomsMixin, MatrixClientDMMixin):
             
             if formatted:
                 content["format"] = "org.matrix.custom.html"
-                import re
-                html = message
-                # Convertir **bold** en <b>bold</b>
-                html = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', html)
-                # Convertir *italic* en <i>italic</i>
-                html = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', html)
-                # Convertir `code` en <code>code</code>
-                html = re.sub(r'`(.+?)`', r'<code>\1</code>', html)
-                # Convertir les retours à la ligne
-                html = html.replace("\n", "<br>")
-                content["formatted_body"] = html
+                content["formatted_body"] = self._format_message_html(message)
             
             response = await self.client.room_send(
                 room_id=room_id,
@@ -254,6 +254,61 @@ class MatrixClientWrapper(MatrixClientRoomsMixin, MatrixClientDMMixin):
             
         except Exception as e:
             logger.error(f"❌ Exception envoi message dans {room_id}: {e}")
+            return None
+
+    async def edit_message(
+        self,
+        room_id: str,
+        event_id: str,
+        message: str,
+        formatted: bool = False,
+    ) -> Optional[str]:
+        """Edite un message existant via m.replace. Retourne l'event_id de l'edit."""
+        if not self.client:
+            logger.error("Client non connecté")
+            return None
+
+        try:
+            new_content = {
+                "msgtype": "m.text",
+                "body": message,
+            }
+            content = {
+                "msgtype": "m.text",
+                "body": f"* {message}",
+                "m.relates_to": {
+                    "rel_type": "m.replace",
+                    "event_id": event_id,
+                },
+                "m.new_content": new_content,
+            }
+
+            if formatted:
+                html = self._format_message_html(message)
+                content["format"] = "org.matrix.custom.html"
+                content["formatted_body"] = f"* {html}"
+                new_content["format"] = "org.matrix.custom.html"
+                new_content["formatted_body"] = html
+
+            response = await self.client.room_send(
+                room_id=room_id,
+                message_type="m.room.message",
+                content=content,
+            )
+
+            if hasattr(response, 'event_id'):
+                logger.debug(
+                    f"✅ Message édité dans {room_id} (event: {response.event_id})"
+                )
+                return response.event_id
+            else:
+                logger.error(
+                    f"❌ Échec edition message dans {room_id}: {response}"
+                )
+                return None
+
+        except Exception as e:
+            logger.error(f"❌ Exception edition message dans {room_id}: {e}")
             return None
     
     async def get_room_members(self, room_id: str) -> List[str]:

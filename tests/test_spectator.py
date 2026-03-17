@@ -12,6 +12,8 @@ import pytest_asyncio
 
 from roles.villageois import Villageois
 from roles.loup_garou import LoupGarou
+from roles.chasseur import Chasseur
+from models.player import Player
 
 pytestmark = pytest.mark.asyncio
 
@@ -47,6 +49,16 @@ class FakeClient:
         return self._room_members.get(room_id, set())
 
 
+class FakeGameManager:
+    """Simule un GameManager minimal pour les tests de roles."""
+
+    def __init__(self, players=None):
+        self.players = players or {}
+
+    def get_player(self, user_id):
+        return self.players.get(user_id)
+
+
 def _make_bot_stub():
     """Crée un stub WerewolfBot avec les méthodes réelles."""
     from matrix_bot.bot_controller import WerewolfBot
@@ -58,6 +70,7 @@ def _make_bot_stub():
     stub.room_manager = FakeRoomManager()
     stub.client = FakeClient()
     stub._wolves_in_room = set()
+    stub.game_manager = None
 
     # Binder les méthodes réelles
     stub._mute_player = WerewolfBot._mute_player.__get__(stub, BotStub)
@@ -167,6 +180,27 @@ class TestCoupleRoomCleanup:
         await stub._mute_player(user_id)
 
         assert user_id in stub.room_manager.dead_invited
+
+
+class TestSpectatorChasseur:
+    """Le Chasseur n'est pas invite au cimetiere tant qu'il peut tirer."""
+
+    async def test_hunter_not_invited_before_shot(self):
+        stub = _make_bot_stub()
+        user_id = "@hunter:matrix.org"
+
+        player = Player("Hunter", user_id)
+        role = Chasseur()
+        role.assign_to_player(player)
+        player.is_alive = False
+        role.can_shoot_now = True
+        role.has_shot = False
+
+        stub.game_manager = FakeGameManager({user_id: player})
+
+        await stub._mute_player(user_id)
+
+        assert user_id not in stub.room_manager.dead_invited
 
 
 class TestDeathNotificationSpectator:

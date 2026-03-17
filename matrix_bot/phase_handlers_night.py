@@ -104,6 +104,9 @@ class PhaseNightHandlersMixin:
                         if dead != eliminated:
                             await self.room_manager.add_to_dead(dead.user_id)
 
+            if eliminated or all_deaths:
+                await self._update_seating_message()
+
             await self._check_mayor_succession()
 
             if self.game_manager.phase != GamePhase.ENDED:

@@ -135,4 +135,23 @@ class WerewolfBot(
         self._game_events: List[str] = []  # Historique des événements pour le récap de fin
         self._kill_signal_task: Optional[asyncio.Task] = None  # Surveillance du signal kill admin
         self._jailed_user_id: Optional[str] = None  # Prisonnier actuel du geolier
+        self._seating_message_event_id: Optional[str] = None  # Event ID du message d'assise
         self.running = False
+
+    async def _update_seating_message(self):
+        """Met a jour le message d'ordre d'assise en le modifiant."""
+        if not self._seating_message_event_id:
+            return
+        if not self.room_manager.village_room:
+            return
+
+        seating_message = self._build_seating_message()
+        if not seating_message:
+            return
+
+        await self.client.edit_message(
+            self.room_manager.village_room,
+            self._seating_message_event_id,
+            seating_message,
+            formatted=True,
+        )

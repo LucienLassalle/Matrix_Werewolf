@@ -86,6 +86,9 @@ class PhaseDayHandlersMixin:
                         player.user_id, player.role
                     )
 
+        if results['deaths']:
+            await self._update_seating_message()
+
         self._sorciere_notified = False
         self._wolf_votes_locked = False
 

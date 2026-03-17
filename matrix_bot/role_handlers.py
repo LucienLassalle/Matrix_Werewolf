@@ -407,6 +407,12 @@ class RoleHandlersMixin:
             f"Sa dernière balle est perdue."
         )
 
+        try:
+            await self.room_manager.add_to_dead(player.user_id)
+            logger.info("☠️ %s invité au cimetière (tir perdu)", player.user_id)
+        except Exception as e:
+            logger.error("Erreur invitation cimetière (tir perdu) pour %s: %s", player.user_id, e)
+
         logger.info(f"⏰ Chasseur {player.pseudo} — tir perdu (timeout)")
 
     def _cancel_chasseur_timeout(self: WerewolfBot, user_id: str):
@@ -511,6 +517,8 @@ class RoleHandlersMixin:
                 await self.notification_manager.send_death_notification(
                     dead.user_id, dead.role
                 )
+
+        await self._update_seating_message()
 
         # Vérifier conversion Enfant Sauvage
         await self._check_enfant_sauvage_conversion()

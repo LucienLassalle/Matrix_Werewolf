@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from models.enums import RoleType
+
 if TYPE_CHECKING:
     from matrix_bot.bot_controller import WerewolfBot
 
@@ -116,6 +118,18 @@ class BotRoomsMixin:
 
     async def _mute_player(self: 'WerewolfBot', user_id: str):
         """Mute un joueur mort : lecture seule partout, muté dans le couple."""
+        player = None
+        game_manager = getattr(self, "game_manager", None)
+        if game_manager:
+            player = game_manager.get_player(user_id)
+        should_invite_dead = True
+        if player and player.role:
+            role = player.role
+            if (role.role_type == RoleType.CHASSEUR
+                    and getattr(role, "can_shoot_now", False)
+                    and not getattr(role, "has_shot", False)):
+                should_invite_dead = False
+
         if self.room_manager.village_room:
             try:
                 await self.client.set_power_level(
@@ -146,8 +160,14 @@ class BotRoomsMixin:
             except Exception as e:
                 logger.error("Erreur mute couple pour %s: %s", user_id, e)
 
-        try:
-            await self.room_manager.add_to_dead(user_id)
-            logger.info("☠️ %s invité au cimetière", user_id)
-        except Exception as e:
-            logger.error("Erreur invitation cimetière pour %s: %s", user_id, e)
+        if should_invite_dead:
+            try:
+                await self.room_manager.add_to_dead(user_id)
+                logger.info("☠️ %s invité au cimetière", user_id)
+            except Exception as e:
+                logger.error("Erreur invitation cimetière pour %s: %s", user_id, e)
+        else:
+            logger.info(
+                "🔫 %s en attente du tir du Chasseur — cimetière différé",
+                user_id,
+            )
