@@ -184,11 +184,13 @@ class TestRoleStatePersistence:
             pytest.skip("Dictateur non trouvé")
 
         dicta.role.has_used_power = True
+        dicta.role.is_armed = True
         gm.save_state()
 
         gm2 = load_into_new_gm(self.tmp.name)
         d2 = self._find_player_by_role(gm2, RoleType.DICTATEUR)
         assert d2.role.has_used_power is True
+        assert d2.role.is_armed is True
         gm2.db.close()
         gm.db.close()
 

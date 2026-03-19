@@ -375,16 +375,22 @@ class CommandHandler:
         Élimine un joueur sans vote. Si c'est un loup, le Dictateur
         devient maire. Sinon, le Dictateur meurt aussi.
         """
-        if not args:
-            return {"success": False, "message": f"Usage : {self.prefix}dictateur {{pseudo}}"}
-        
-        target = self.game.get_player_by_pseudo(args[0])
-        
-        if not target:
-            return {"success": False, "message": f"Joueur {args[0]} non trouvé"}
+        from models.enums import GamePhase
         
         if not player.role or player.role.role_type != RoleType.DICTATEUR:
             return {"success": False, "message": "Vous n'êtes pas le Dictateur"}
+
+        if self.game.phase == GamePhase.NIGHT:
+            if args:
+                return {"success": False, "message": "Utilisez !dictateur sans cible la nuit"}
+            return player.role.perform_action(self.game, ActionType.DICTATOR_KILL, None)
+
+        if not args:
+            return {"success": False, "message": f"Usage : {self.prefix}dictateur {{pseudo}}"}
+
+        target = self.game.get_player_by_pseudo(args[0])
+        if not target:
+            return {"success": False, "message": f"Joueur {args[0]} non trouvé"}
         
         return player.role.perform_action(self.game, ActionType.DICTATOR_KILL, target)
     

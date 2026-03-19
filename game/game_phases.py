@@ -118,15 +118,19 @@ class PhaseManagerMixin:
         if self.phase == GamePhase.ENDED:
             return {"success": False, "message": "La partie est terminée"}
 
+        dictator_deaths: List[Player] = []
+        if self.phase == GamePhase.DAY:
+            dictator_deaths = self.resolve_dictator_indecision()
+
         self.night_count += 1
         self._start_night()
 
         winner = self.check_win_condition()
         if winner:
             self.phase = GamePhase.ENDED
-            return {"success": True, "winner": winner}
+            return {"success": True, "winner": winner, "dictator_deaths": dictator_deaths}
 
-        return {"success": True}
+        return {"success": True, "dictator_deaths": dictator_deaths}
 
     def _start_night(self: 'GameManager'):
         """Commence une nouvelle nuit (logique interne)."""
@@ -367,10 +371,20 @@ class PhaseManagerMixin:
                 self.log(f"{most_voted.pseudo} a été éliminé par vote")
                 all_deaths = self.kill_player(most_voted, killed_during_day=True, voted_out=True)
 
+        dictator_deaths = self.resolve_dictator_indecision()
+
         winner = self.check_win_condition()
         if winner:
             self.phase = GamePhase.ENDED
-            return {"success": True, "winner": winner, "eliminated": most_voted, "all_deaths": all_deaths, "pardoned_idiot": pardoned_idiot, "mayor_result": mayor_result}
+            return {
+                "success": True,
+                "winner": winner,
+                "eliminated": most_voted,
+                "all_deaths": all_deaths,
+                "dictator_deaths": dictator_deaths,
+                "pardoned_idiot": pardoned_idiot,
+                "mayor_result": mayor_result
+            }
 
         self.night_count += 1
         self._start_night()
@@ -378,6 +392,41 @@ class PhaseManagerMixin:
         winner = self.check_win_condition()
         if winner:
             self.phase = GamePhase.ENDED
-            return {"success": True, "winner": winner, "eliminated": most_voted, "all_deaths": all_deaths, "pardoned_idiot": pardoned_idiot, "mayor_result": mayor_result}
+            return {
+                "success": True,
+                "winner": winner,
+                "eliminated": most_voted,
+                "all_deaths": all_deaths,
+                "dictator_deaths": dictator_deaths,
+                "pardoned_idiot": pardoned_idiot,
+                "mayor_result": mayor_result
+            }
 
-        return {"success": True, "eliminated": most_voted, "all_deaths": all_deaths, "pardoned_idiot": pardoned_idiot, "mayor_result": mayor_result}
+        return {
+            "success": True,
+            "eliminated": most_voted,
+            "all_deaths": all_deaths,
+            "dictator_deaths": dictator_deaths,
+            "pardoned_idiot": pardoned_idiot,
+            "mayor_result": mayor_result
+        }
+
+    # ==================== Dictateur ====================
+
+    def resolve_dictator_indecision(self: 'GameManager') -> List[Player]:
+        """Tue le Dictateur s'il a arme son pouvoir et n'a pas frappe avant la nuit."""
+        deaths: List[Player] = []
+        for player in self.players.values():
+            if not player.is_alive or not player.role:
+                continue
+            if player.role.role_type != RoleType.DICTATEUR:
+                continue
+            if not getattr(player.role, 'is_armed', False):
+                continue
+            if player.role.has_used_power:
+                continue
+            player.role.is_armed = False
+            player.role.has_used_power = True
+            deaths.extend(self.kill_player(player, killed_during_day=True))
+
+        return deaths

@@ -233,7 +233,11 @@ class TestSpecialRoles:
         loup_role = RoleFactory.create_role(RoleType.LOUP_GAROU)
         loup_role.assign_to_player(loup)
         
-        # Le Dictateur ne peut agir que le jour
+        game.phase = GamePhase.NIGHT
+        arm = role.perform_action(game, ActionType.DICTATOR_KILL, None)
+        assert arm["success"]
+
+        # Le Dictateur frappe le jour
         game.phase = GamePhase.DAY
         result = role.perform_action(game, ActionType.DICTATOR_KILL, loup)
         assert result["success"] == True

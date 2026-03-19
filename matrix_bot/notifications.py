@@ -266,7 +266,10 @@ class NotificationManager:
             "Chasseur": [f"`{p}tuer {{pseudo}}` — Tirer sur un joueur après votre mort"],
             "Garde": [f"`{p}garde {{pseudo}}` — Protéger un joueur (pas le même 2 nuits de suite)"],
             "Corbeau": [f"`{p}corbeau {{pseudo}}` — Ajouter 2 votes contre quelqu'un"],
-            "Dictateur": [f"`{p}dictateur {{pseudo}}` — Éliminer quelqu'un sans vote (1 fois, de jour)"],
+            "Dictateur": [
+                f"`{p}dictateur` — Armer votre pouvoir la nuit (au village, 1 fois)",
+                f"`{p}dictateur {{pseudo}}` — Frapper le jour suivant (au village)"
+            ],
             "Voleur": [
                 f"`{p}voleur-tirer` — Tirer 2 cartes supplémentaires",
                 f"`{p}voleur-choisir {{1|2}}` — Choisir une carte tirée",
@@ -385,9 +388,9 @@ class NotificationManager:
                 "les faire éliminer plus facilement."
             ),
             "Dictateur": (
-                "⚔️ Une fois dans la partie (de jour), vous pouvez éliminer un "
-                "joueur sans vote.\n"
-                f"Exemple : `{p}dictateur Bob` (en DM).\n"
+                "⚔️ Une seule fois, vous armez votre pouvoir la nuit, puis vous "
+                "frappez le jour suivant sans vote.\n"
+                f"Exemple : `{p}dictateur` (au village la nuit), puis `{p}dictateur Bob` (au village le jour).\n"
                 "⚠️ Si la cible est un villageois, VOUS mourez aussi !\n"
                 "💡 Soyez sûr de votre cible avant d'utiliser ce pouvoir."
             ),

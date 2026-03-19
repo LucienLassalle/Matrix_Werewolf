@@ -56,9 +56,13 @@ class TestDictateurCommand:
             ("Dictateur", "d1", RoleType.DICTATEUR),
             ("Loup", "w1", RoleType.LOUP_GAROU),
         )
-        game.phase = GamePhase.DAY
+        game.phase = GamePhase.NIGHT
         handler = CommandHandler(game)
 
+        result = handler.execute_command("d1", "dictateur", [])
+        assert result["success"]
+
+        game.phase = GamePhase.DAY
         result = handler.execute_command("d1", "dictateur", ["Loup"])
         assert result["success"]
         assert not game.players["w1"].is_alive
@@ -69,9 +73,13 @@ class TestDictateurCommand:
             ("Dictateur", "d1", RoleType.DICTATEUR),
             ("Villageois", "v1", RoleType.VILLAGEOIS),
         )
-        game.phase = GamePhase.DAY
+        game.phase = GamePhase.NIGHT
         handler = CommandHandler(game)
 
+        result = handler.execute_command("d1", "dictateur", [])
+        assert result["success"]
+
+        game.phase = GamePhase.DAY
         result = handler.execute_command("d1", "dictateur", ["Villageois"])
         assert result["success"]
         assert not game.players["v1"].is_alive

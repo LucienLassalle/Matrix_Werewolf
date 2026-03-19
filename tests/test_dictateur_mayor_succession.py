@@ -16,11 +16,15 @@ class TestDictateurMayorSuccession:
             ("Villageois2", "v2", RoleType.VILLAGEOIS),
             ("Villageois3", "v3", RoleType.VILLAGEOIS),
         )
-        game.phase = GamePhase.DAY
+        game.phase = GamePhase.NIGHT
 
         dictateur = game.players["d1"]
         loup = game.players["w1"]
 
+        arm = dictateur.role.perform_action(game, ActionType.DICTATOR_KILL, None)
+        assert arm["success"]
+
+        game.phase = GamePhase.DAY
         result = dictateur.role.perform_action(game, ActionType.DICTATOR_KILL, loup)
         assert result["success"]
         assert dictateur.is_mayor

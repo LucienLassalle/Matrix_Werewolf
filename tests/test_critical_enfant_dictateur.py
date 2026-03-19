@@ -74,6 +74,10 @@ class TestDictateur:
         wolf = next(p for p in players if p.role.role_type == RoleType.LOUP_GAROU)
         dictateur = next(p for p in players if p.role.role_type == RoleType.DICTATEUR)
 
+        game.phase = GamePhase.NIGHT
+        arm = dictateur.role.perform_action(game, ActionType.DICTATOR_KILL, None)
+        assert arm["success"]
+
         game.phase = GamePhase.DAY
         result = dictateur.role.perform_action(game, ActionType.DICTATOR_KILL, wolf)
 
@@ -94,6 +98,10 @@ class TestDictateur:
             p for p in players
             if p.role.role_type not in (RoleType.LOUP_GAROU, RoleType.DICTATEUR)
         )
+
+        game.phase = GamePhase.NIGHT
+        arm = dictateur.role.perform_action(game, ActionType.DICTATOR_KILL, None)
+        assert arm["success"]
 
         game.phase = GamePhase.DAY
         result = dictateur.role.perform_action(game, ActionType.DICTATOR_KILL, victim)

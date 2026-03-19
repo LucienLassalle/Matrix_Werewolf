@@ -31,6 +31,16 @@ def make_game(*specs) -> GameManager:
     return game
 
 
+def arm_dictateur(game: GameManager, uid: str):
+    """Arme le pouvoir du Dictateur pendant la nuit."""
+    game.phase = GamePhase.NIGHT
+    result = game.players[uid].role.perform_action(
+        game, ActionType.DICTATOR_KILL, None
+    )
+    assert result["success"]
+    assert result.get("armed")
+
+
 # ═══════════════════════════════════════════════════════════
 #  Coup d'état — résultat selon la cible
 # ═══════════════════════════════════════════════════════════
@@ -46,6 +56,7 @@ class TestDictateurCoupDetat:
             ("Bob", "b1", RoleType.VILLAGEOIS),
             ("Eve", "e1", RoleType.VILLAGEOIS),
         )
+        arm_dictateur(game, "d1")
         game.phase = GamePhase.DAY
         result = game.players["d1"].role.perform_action(
             game, ActionType.DICTATOR_KILL, game.players["w1"]
@@ -63,6 +74,7 @@ class TestDictateurCoupDetat:
             ("Bob", "b1", RoleType.VILLAGEOIS),
             ("Eve", "e1", RoleType.VILLAGEOIS),
         )
+        arm_dictateur(game, "d1")
         game.phase = GamePhase.DAY
         result = game.players["d1"].role.perform_action(
             game, ActionType.DICTATOR_KILL, game.players["a1"]
@@ -73,7 +85,7 @@ class TestDictateurCoupDetat:
         assert not game.players["d1"].is_alive
         assert game.players["d1"].is_mayor is False
 
-    def test_cannot_act_at_night(self):
+    def test_cannot_kill_at_night(self):
         game = make_game(
             ("Dictateur", "d1", RoleType.DICTATEUR),
             ("Loup", "w1", RoleType.LOUP_GAROU),
@@ -95,12 +107,14 @@ class TestDictateurCoupDetat:
             ("Alice", "a1", RoleType.VILLAGEOIS),
             ("Bob", "b1", RoleType.VILLAGEOIS),
         )
+        arm_dictateur(game, "d1")
         game.phase = GamePhase.DAY
         game.players["d1"].role.perform_action(
             game, ActionType.DICTATOR_KILL, game.players["w1"]
         )
+        game.phase = GamePhase.NIGHT
         result = game.players["d1"].role.perform_action(
-            game, ActionType.DICTATOR_KILL, game.players["w2"]
+            game, ActionType.DICTATOR_KILL, None
         )
         assert not result["success"]
 
@@ -120,6 +134,7 @@ class TestDictateurSelfTarget:
             ("Bob", "b1", RoleType.VILLAGEOIS),
             ("Eve", "e1", RoleType.VILLAGEOIS),
         )
+        arm_dictateur(game, "d1")
         game.phase = GamePhase.DAY
         result = game.players["d1"].role.perform_action(
             game, ActionType.DICTATOR_KILL, game.players["d1"]
@@ -145,6 +160,7 @@ class TestDictateurMayor:
             ("Alice", "a1", RoleType.VILLAGEOIS),
             ("Bob", "b1", RoleType.VILLAGEOIS),
         )
+        arm_dictateur(game, "d1")
         game.phase = GamePhase.DAY
         game.players["m1"].is_mayor = True
 
@@ -165,6 +181,7 @@ class TestDictateurMayor:
             ("Bob", "b1", RoleType.VILLAGEOIS),
             ("Eve", "e1", RoleType.VILLAGEOIS),
         )
+        arm_dictateur(game, "d1")
         game.phase = GamePhase.DAY
         game.players["wm1"].is_mayor = True
 
@@ -185,6 +202,7 @@ class TestDictateurMayor:
             ("Bob", "b1", RoleType.VILLAGEOIS),
             ("Eve", "e1", RoleType.VILLAGEOIS),
         )
+        arm_dictateur(game, "d1")
         game.phase = GamePhase.DAY
         game.players["d1"].role.perform_action(
             game, ActionType.DICTATOR_KILL, game.players["w1"]
@@ -202,6 +220,7 @@ class TestDictateurMayor:
             ("Alice", "a1", RoleType.VILLAGEOIS),
             ("Bob", "b1", RoleType.VILLAGEOIS),
         )
+        arm_dictateur(game, "d1")
         game.phase = GamePhase.DAY
         game.players["m1"].is_mayor = True
         game.players["d1"].role.perform_action(
@@ -227,6 +246,7 @@ class TestDictateurVoteWeight:
             ("Alice", "a1", RoleType.VILLAGEOIS),
             ("Bob", "b1", RoleType.VILLAGEOIS),
         )
+        arm_dictateur(game, "d1")
         game.phase = GamePhase.DAY
         game.players["m1"].is_mayor = True
         game.players["d1"].role.perform_action(
@@ -258,6 +278,7 @@ class TestDictateurDuringVotePhase:
             ("Bob", "b1", RoleType.VILLAGEOIS),
             ("Eve", "e1", RoleType.VILLAGEOIS),
         )
+        arm_dictateur(game, "d1")
         game.phase = GamePhase.VOTE
         game.vote_manager.cast_vote(game.players["a1"], game.players["e1"])
         game.vote_manager.cast_vote(game.players["b1"], game.players["e1"])
@@ -277,6 +298,7 @@ class TestDictateurDuringVotePhase:
             ("Bob", "b1", RoleType.VILLAGEOIS),
             ("Eve", "e1", RoleType.VILLAGEOIS),
         )
+        arm_dictateur(game, "d1")
         game.phase = GamePhase.VOTE
         game.vote_manager.cast_vote(game.players["b1"], game.players["a1"])
         game.vote_manager.cast_vote(game.players["e1"], game.players["a1"])
@@ -298,6 +320,7 @@ class TestDictateurDuringVotePhase:
             ("Bob", "b1", RoleType.VILLAGEOIS),
             ("Eve", "e1", RoleType.VILLAGEOIS),
         )
+        arm_dictateur(game, "d1")
         game.phase = GamePhase.DAY
         game.players["d1"].role.perform_action(
             game, ActionType.DICTATOR_KILL, game.players["w1"]
@@ -312,6 +335,7 @@ class TestDictateurDuringVotePhase:
             ("Bob", "b1", RoleType.VILLAGEOIS),
             ("Eve", "e1", RoleType.VILLAGEOIS),
         )
+        arm_dictateur(game, "d1")
         game.phase = GamePhase.VOTE
         game.vote_manager.cast_vote(game.players["w1"], game.players["b1"])
 
@@ -324,6 +348,28 @@ class TestDictateurDuringVotePhase:
         assert game.phase == GamePhase.DAY
         assert game.vote_manager.votes == {}
         assert game.players["b1"].is_alive
+
+
+class TestDictateurIndecision:
+    """Le Dictateur meurt s'il ne frappe pas avant la fin du jour."""
+
+    def test_dictateur_dies_if_no_kill(self):
+        game = make_game(
+            ("Dictateur", "d1", RoleType.DICTATEUR),
+            ("Loup", "w1", RoleType.LOUP_GAROU),
+            ("Alice", "a1", RoleType.VILLAGEOIS),
+            ("Bob", "b1", RoleType.VILLAGEOIS),
+            ("Eve", "e1", RoleType.VILLAGEOIS),
+        )
+        arm_dictateur(game, "d1")
+        game.phase = GamePhase.VOTE
+
+        result = game.end_vote_phase()
+        deaths = result.get("dictator_deaths", [])
+        dead_ids = {d.user_id for d in deaths}
+
+        assert "d1" in dead_ids
+        assert not game.players["d1"].is_alive
 
 
 if __name__ == "__main__":

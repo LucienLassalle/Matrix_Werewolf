@@ -274,7 +274,6 @@ class UIBuildersMixin:
         message += f"• `{p}msg {{message}}` — Parler au prisonnier (Geôlier)\n"
 
         message += "\n🔒 **Commandes privées de jour** (en message privé au bot) :\n"
-        message += f"• `{p}dictateur {{pseudo}}` — Éliminer quelqu'un sans vote (Dictateur)\n"
         message += f"• `{p}geolier {{pseudo}}` — Choisir un prisonnier pour la nuit (Geôlier)\n"
         message += f"• `{p}voleur-tirer` — Tirer 2 cartes (Voleur, nuit 1)\n"
         message += f"• `{p}voleur-choisir {{1|2}}` — Choisir une carte tirée (Voleur)\n"
@@ -282,8 +281,8 @@ class UIBuildersMixin:
         message += "\n"
 
         # Commandes spéciales
-        message += "⚡ **Commandes spéciales** (en message privé au bot) :\n"
-        message += f"• `{p}dictateur {{pseudo}}` — Éliminer sans vote, de jour (Dictateur, 1 fois)\n"
+        message += "⚡ **Commandes spéciales** (dans le salon du village) :\n"
+        message += f"• `{p}dictateur` (nuit) → `{p}dictateur {{pseudo}}` (jour) — Coup d'etat public (Dictateur, 1 fois)\n"
         message += f"• `{p}maire {{pseudo}}` — Désigner un successeur (Maire mourant)\n"
 
         # Rôles désactivés

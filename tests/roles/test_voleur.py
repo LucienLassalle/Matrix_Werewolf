@@ -24,10 +24,10 @@ def make_game(*specs) -> GameManager:
 
 
 class TestVoleurExtraCardsPool:
-    """Les cartes du Voleur sont tirées d'un pool restreint."""
+    """Les cartes du Voleur sont tirées d'un pool ouvert."""
 
-    def test_excluded_roles_not_in_pool(self):
-        """Cupidon, Mercenaire, Dictateur, Voleur ne sont jamais dans le tirage."""
+    def test_roles_can_appear_in_pool(self):
+        """Le pool peut contenir tous les rôles (y compris Dictateur, etc.)."""
         game = make_game(
             ("Voleur", "v1", RoleType.VOLEUR),
             ("Loup", "w1", RoleType.LOUP_GAROU),
@@ -35,22 +35,17 @@ class TestVoleurExtraCardsPool:
             ("Bob", "b1", RoleType.VILLAGEOIS),
             ("Eve", "e1", RoleType.VILLAGEOIS),
         )
-        # Simuler start_game pour générer les extra_roles
-        import random
-        excluded = {RoleType.VOLEUR, RoleType.CUPIDON, RoleType.MERCENAIRE, RoleType.DICTATEUR}
-        extra_pool = [rt for rt in RoleType if rt not in excluded]
+        extra_pool = [rt for rt in RoleType]
 
-        # Vérifier que les rôles exclus ne sont pas dans le pool
-        for rt in excluded:
-            assert rt not in extra_pool
-
-        # Vérifier que d'autres rôles y sont bien
         assert RoleType.VILLAGEOIS in extra_pool
         assert RoleType.LOUP_GAROU in extra_pool
         assert RoleType.SORCIERE in extra_pool
+        assert RoleType.DICTATEUR in extra_pool
+        assert RoleType.CUPIDON in extra_pool
+        assert RoleType.MERCENAIRE in extra_pool
 
     def test_extra_roles_generated_on_start(self):
-        """start_game() génère les extra_roles sans rôles interdits."""
+        """start_game() génère les extra_roles."""
         game = GameManager()
         game.add_player("Voleur", "v1")
         game.add_player("Loup", "w1")
@@ -70,9 +65,8 @@ class TestVoleurExtraCardsPool:
         result = game.start_game()
 
         assert len(game.extra_roles) == 2
-        excluded = {RoleType.VOLEUR, RoleType.CUPIDON, RoleType.MERCENAIRE, RoleType.DICTATEUR}
         for role in game.extra_roles:
-            assert role.role_type not in excluded
+            assert role.role_type in RoleType
 
 
 class TestVoleurSwap:

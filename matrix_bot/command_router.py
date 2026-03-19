@@ -133,8 +133,13 @@ class CommandRouterMixin:
                 f"Nuit {night} — 🐺 **Le Loup Noir** active la conversion"
             )
 
-        elif command == 'dictateur' and target_name:
-            pass  # Déjà tracé dans _process_command_deaths
+        elif command == 'dictateur':
+            if result.get('armed'):
+                self._game_events.append(
+                    f"Nuit {night} — ⚔️ **Le Dictateur {name}** prend le pouvoir"
+                )
+            elif target_name:
+                pass  # Déjà tracé dans _process_command_deaths
 
         elif command == 'tuer' and target_name:
             # Loup Blanc kill (Chasseur tracé dans _process_command_deaths)
@@ -373,16 +378,19 @@ class CommandRouterMixin:
                 )
                 return {'success': False, 'error': 'Mauvais salon'}
 
-        # Dictateur : commande de JOUR uniquement, en DM
+        # Dictateur : commande au village (tout le monde voit le coup d'etat)
         if command == 'dictateur':
-            if not is_dm:
+            if not is_village:
                 await self.client.send_dm(
                     user_id,
-                    f"❌ La commande **{self.command_prefix}dictateur** doit être utilisée en **message privé** avec le bot."
+                    f"❌ La commande **{self.command_prefix}dictateur** doit être utilisée dans le **salon du village**."
                 )
-                return {'success': False, 'error': 'Commande privée uniquement'}
-            if self.game_manager.phase != GamePhase.DAY and self.game_manager.phase != GamePhase.VOTE:
-                await self.client.send_dm(user_id, "❌ Le Dictateur ne peut agir que **pendant le jour**.")
+                return {'success': False, 'error': 'Mauvais salon'}
+            if self.game_manager.phase not in (GamePhase.NIGHT, GamePhase.DAY, GamePhase.VOTE):
+                await self.client.send_dm(
+                    user_id,
+                    "❌ Le Dictateur ne peut agir que **la nuit** (pour armer) ou **le jour** (pour frapper)."
+                )
                 return {'success': False, 'error': 'Phase incorrecte'}
             if self.game_manager.night_count < 1:
                 await self.client.send_dm(user_id, "❌ La première nuit n'a pas encore eu lieu.")
@@ -523,6 +531,13 @@ class CommandRouterMixin:
             # Après !lg, vérifier si le Loup Voyant doit rejoindre le salon
             if result.get('success') and command == 'lg':
                 await self._check_loup_voyant_room()
+
+            # Dictateur : annoncer publiquement quand le pouvoir est arme
+            if result.get('success') and command == 'dictateur' and result.get('armed'):
+                await self.room_manager.send_to_village(
+                    f"⚔️ **Le Dictateur {player.display_name}** a pris le pouvoir, "
+                    "il va tuer quelqu'un."
+                )
 
             # Voleur échange : notifier la cible et gérer les salons
             if (result.get('success') and command == 'voleur-echange'

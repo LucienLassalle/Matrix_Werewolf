@@ -29,6 +29,7 @@ class PhaseNightHandlersMixin:
 
             eliminated = vote_result.get("eliminated")
             all_deaths = vote_result.get("all_deaths", [])
+            dictator_deaths = vote_result.get("dictator_deaths", [])
             if eliminated:
                 self._game_events.append(
                     f"Jour {self.game_manager.day_count} — 🗳️ **{eliminated.display_name}** "
@@ -89,6 +90,11 @@ class PhaseNightHandlersMixin:
                         await self.notification_manager.send_death_notification(
                             dead.user_id, dead.role
                         )
+                for dead in dictator_deaths:
+                    if dead != eliminated:
+                        await self.notification_manager.send_death_notification(
+                            dead.user_id, dead.role
+                        )
 
             await self._check_enfant_sauvage_conversion()
 
@@ -103,9 +109,40 @@ class PhaseNightHandlersMixin:
                     for dead in all_deaths:
                         if dead != eliminated:
                             await self.room_manager.add_to_dead(dead.user_id)
+                if dictator_deaths:
+                    for dead in dictator_deaths:
+                        if dead != eliminated:
+                            await self.room_manager.add_to_dead(dead.user_id)
 
             if eliminated or all_deaths:
                 await self._update_seating_message()
+
+            if dictator_deaths:
+                for dead in dictator_deaths:
+                    if dead.role and dead.role.role_type == RoleType.DICTATEUR:
+                        msg = (
+                            f"⚔️ **Le Dictateur {dead.display_name}** a pris le pouvoir "
+                            "mais n'a pas choisi sa cible : il meurt."
+                        )
+                        self._game_events.append(
+                            f"Jour {self.game_manager.day_count} — ⚔️ **{dead.display_name}** "
+                            "(Dictateur) meurt faute de decision"
+                        )
+                    elif dead.get_lovers() and any(not l.is_alive for l in dead.get_lovers()):
+                        msg = (
+                            f"💔 **{dead.display_name}** meurt de chagrin (amoureux/se) !\n"
+                            f"Son rôle était : **{dead.role.name}**"
+                        )
+                        self._game_events.append(
+                            f"Jour {self.game_manager.day_count} — 💔 **{dead.display_name}** "
+                            f"meurt de chagrin ({dead.role.name})"
+                        )
+                    else:
+                        msg = (
+                            f"💀 **{dead.display_name}** est mort.e !\n"
+                            f"Son rôle était : **{dead.role.name}**"
+                        )
+                    await self.room_manager.send_to_village(msg)
 
             await self._check_mayor_succession()
 
@@ -117,6 +154,38 @@ class PhaseNightHandlersMixin:
                 await self._announce_victory(result["winner"])
                 self.scheduler.stop()
                 return
+            dictator_deaths = result.get("dictator_deaths", [])
+            if dictator_deaths:
+                for dead in dictator_deaths:
+                    if dead.role and dead.role.role_type == RoleType.DICTATEUR:
+                        msg = (
+                            f"⚔️ **Le Dictateur {dead.display_name}** a pris le pouvoir "
+                            "mais n'a pas choisi sa cible : il meurt."
+                        )
+                        self._game_events.append(
+                            f"Jour {self.game_manager.day_count} — ⚔️ **{dead.display_name}** "
+                            "(Dictateur) meurt faute de decision"
+                        )
+                    elif dead.get_lovers() and any(not l.is_alive for l in dead.get_lovers()):
+                        msg = (
+                            f"💔 **{dead.display_name}** meurt de chagrin (amoureux/se) !\n"
+                            f"Son rôle était : **{dead.role.name}**"
+                        )
+                        self._game_events.append(
+                            f"Jour {self.game_manager.day_count} — 💔 **{dead.display_name}** "
+                            f"meurt de chagrin ({dead.role.name})"
+                        )
+                    else:
+                        msg = (
+                            f"💀 **{dead.display_name}** est mort.e !\n"
+                            f"Son rôle était : **{dead.role.name}**"
+                        )
+                    await self.room_manager.send_to_village(msg)
+                    await self.room_manager.add_to_dead(dead.user_id)
+                    if self.notification_manager:
+                        await self.notification_manager.send_death_notification(
+                            dead.user_id, dead.role
+                        )
 
         wolf_deadline = self.scheduler.wolf_vote_deadline
 
