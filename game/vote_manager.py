@@ -90,12 +90,24 @@ class VoteManager:
         counts = self.count_mayor_votes()
         if not counts:
             return "Aucun vote enregistré."
+
+        voters_by_target: Dict[str, List[str]] = {}
+        for voter_uid, target_uid in self.mayor_votes_for.items():
+            voter = self._player_cache.get(voter_uid)
+            if voter and not voter.is_alive:
+                continue
+            voter_name = voter.pseudo if voter else voter_uid
+            voters_by_target.setdefault(target_uid, []).append(voter_name)
         
         summary = "Résumé des votes :\n"
         for uid, score in sorted(counts.items(), key=lambda x: x[1], reverse=True):
             player = self._player_cache.get(uid)
             name = player.pseudo if player else uid
-            summary += f"- {name} : {score} vote(s)\n"
+            voters = voters_by_target.get(uid, [])
+            if voters:
+                summary += f"- {name} : {score} vote(s) — {', '.join(voters)}\n"
+            else:
+                summary += f"- {name} : {score} vote(s)\n"
         
         return summary
     
@@ -231,11 +243,38 @@ class VoteManager:
         counts = self.get_vote_counts(is_wolf_vote)
         if not counts:
             return "Aucun vote enregistré."
+
+        voters_by_target: Dict[str, List[str]] = {}
+        vote_source = self.wolf_votes if is_wolf_vote else self.votes
+        for voter_uid, target_uid in vote_source.items():
+            voter = self._player_cache.get(voter_uid)
+            if voter and not voter.is_alive:
+                continue
+            voter_name = voter.pseudo if voter else voter_uid
+            if not is_wolf_vote and voter and voter.is_mayor:
+                voter_name = f"{voter_name} (maire x2)"
+            voters_by_target.setdefault(target_uid, []).append(voter_name)
+
+        bonus_by_target: Dict[str, int] = {}
+        if not is_wolf_vote:
+            for uid, player in self._player_cache.items():
+                if player.is_alive and player.votes_against > 0:
+                    bonus_by_target[uid] = player.votes_against
         
         summary = "Résumé des votes:\n"
         for uid, vote_count in sorted(counts.items(), key=lambda x: x[1], reverse=True):
             player = self._player_cache.get(uid)
             name = player.pseudo if player else uid
-            summary += f"- {name}: {vote_count} vote(s)\n"
+            voters = voters_by_target.get(uid, [])
+            bonus = bonus_by_target.get(uid)
+            extras: List[str] = []
+            if voters:
+                extras.append(", ".join(voters))
+            if bonus:
+                extras.append(f"bonus: +{bonus}")
+            if extras:
+                summary += f"- {name}: {vote_count} vote(s) — {' | '.join(extras)}\n"
+            else:
+                summary += f"- {name}: {vote_count} vote(s)\n"
         
         return summary
