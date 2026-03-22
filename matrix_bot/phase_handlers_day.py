@@ -41,13 +41,13 @@ class PhaseDayHandlersMixin:
         if results.get('converted'):
             await self._handle_conversion(results['converted'])
 
-        if results.get('saved'):
-            for saved_id in results['saved']:
+        if results.get('guard_saved'):
+            for saved_id in results['guard_saved']:
                 saved_player = self.game_manager.get_player(saved_id)
                 if saved_player:
                     self._game_events.append(
                         f"Nuit {self.game_manager.night_count} — 🛡️ **{saved_player.display_name}** "
-                        f"sauvé par la protection du Garde"
+                        f"sauvé par la protection du Garde (les loups l'ont visé)"
                     )
 
         await self._check_enfant_sauvage_conversion()

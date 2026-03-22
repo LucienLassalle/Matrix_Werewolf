@@ -52,6 +52,7 @@ class ActionManager:
             "wolf_target": None,
             "deaths": [],
             "saved": [],
+            "guard_saved": [],
             "converted": None,
             "actions": []
         }
@@ -86,6 +87,7 @@ class ActionManager:
             if wolf_target.is_protected:
                 # Garde protège contre meurtre ET conversion
                 self.saved_players.append(wolf_target)
+                results["guard_saved"].append(wolf_target)
             elif loup_noir_converts and wolf_target.get_team() != Team.MECHANT:
                 # Convertir au lieu de tuer
                 from roles.loup_garou import LoupGarou

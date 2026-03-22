@@ -212,18 +212,27 @@ class PhaseManagerMixin:
         Wrapper autour de end_night() pour l'interface du bot.
         """
         if self.phase != GamePhase.NIGHT:
-            return {"deaths": [], "saved": [], "wolf_target": None, "converted": None, "winner": None}
+            return {
+                "deaths": [],
+                "saved": [],
+                "guard_saved": [],
+                "wolf_target": None,
+                "converted": None,
+                "winner": None,
+            }
 
         result = self.end_night()
 
         deaths = []
         saved = []
+        guard_saved = []
         wolf_target = None
         converted = None
 
         if result.get("results"):
             deaths = [p.user_id for p in result["results"].get("deaths", [])]
             saved = [p.user_id for p in result["results"].get("saved", [])]
+            guard_saved = [p.user_id for p in result["results"].get("guard_saved", [])]
             if result["results"].get("wolf_target"):
                 wolf_target = result["results"]["wolf_target"].user_id
             if result["results"].get("converted"):
@@ -232,6 +241,7 @@ class PhaseManagerMixin:
         return {
             "deaths": deaths,
             "saved": saved,
+            "guard_saved": guard_saved,
             "wolf_target": wolf_target,
             "converted": converted,
             "winner": result.get("winner")
