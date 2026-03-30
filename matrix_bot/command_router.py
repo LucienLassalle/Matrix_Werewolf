@@ -378,14 +378,8 @@ class CommandRouterMixin:
                 )
                 return {'success': False, 'error': 'Mauvais salon'}
 
-        # Dictateur : commande au village (tout le monde voit le coup d'etat)
+        # Dictateur : armement en DM la nuit, coup d'etat au village le jour
         if command == 'dictateur':
-            if not is_village:
-                await self.client.send_dm(
-                    user_id,
-                    f"❌ La commande **{self.command_prefix}dictateur** doit être utilisée dans le **salon du village**."
-                )
-                return {'success': False, 'error': 'Mauvais salon'}
             if self.game_manager.phase not in (GamePhase.NIGHT, GamePhase.DAY, GamePhase.VOTE):
                 await self.client.send_dm(
                     user_id,
@@ -395,6 +389,20 @@ class CommandRouterMixin:
             if self.game_manager.night_count < 1:
                 await self.client.send_dm(user_id, "❌ La première nuit n'a pas encore eu lieu.")
                 return {'success': False, 'error': 'Première nuit requise'}
+            if self.game_manager.phase == GamePhase.NIGHT:
+                if not is_dm:
+                    await self.client.send_dm(
+                        user_id,
+                        f"❌ La commande **{self.command_prefix}dictateur** (armement) doit être utilisée en **message privé** avec le bot."
+                    )
+                    return {'success': False, 'error': 'Commande privée uniquement'}
+            else:
+                if not is_village:
+                    await self.client.send_dm(
+                        user_id,
+                        f"❌ La commande **{self.command_prefix}dictateur** (cible) doit être utilisée dans le **salon du village**."
+                    )
+                    return {'success': False, 'error': 'Mauvais salon'}
 
         # Maire : désignation du successeur, DM uniquement
         if command == 'maire':
