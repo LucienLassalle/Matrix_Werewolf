@@ -307,10 +307,12 @@ class TestRoleStatePersistence:
             pytest.skip("Corbeau non trouvé")
 
         corbeau.role.has_used_power_tonight = True
+        corbeau.role.current_target_id = corbeau.user_id
         gm.save_state()
 
         gm2 = load_into_new_gm(self.tmp.name)
         c2 = self._find_player_by_role(gm2, RoleType.CORBEAU)
         assert c2.role.has_used_power_tonight is True
+        assert c2.role.current_target_id == corbeau.user_id
         gm2.db.close()
         gm.db.close()

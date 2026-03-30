@@ -2,7 +2,7 @@
 
 Couvre :
 - Ajout de 2 votes via perform_action
-- Une seule utilisation par nuit  
+- Changement de cible pendant la nuit
 - Reset au début de la nuit
 - Cible invalide (morte ou None)
 """
@@ -42,8 +42,8 @@ class TestCorbeau:
         assert result["success"]
         assert alice.votes_against == initial + 2
 
-    def test_one_use_per_night(self):
-        """Le Corbeau ne peut utiliser son pouvoir qu'une fois par nuit."""
+    def test_can_change_target_during_night(self):
+        """Le Corbeau peut changer de cible pendant la nuit."""
         game = make_game(
             ("Corbeau", "c1", RoleType.CORBEAU),
             ("Alice", "a1", RoleType.VILLAGEOIS),
@@ -51,11 +51,18 @@ class TestCorbeau:
             ("Loup", "w1", RoleType.LOUP_GAROU),
         )
         corbeau = game.players["c1"]
-        result1 = corbeau.role.perform_action(game, ActionType.ADD_VOTES, target=game.players["a1"])
-        assert result1["success"]
+        alice = game.players["a1"]
+        bob = game.players["b1"]
 
-        # Deuxième utilisation échoue
-        assert not corbeau.role.can_perform_action(ActionType.ADD_VOTES)
+        result1 = corbeau.role.perform_action(game, ActionType.ADD_VOTES, target=alice)
+        assert result1["success"]
+        assert alice.votes_against == 2
+        assert bob.votes_against == 0
+
+        result2 = corbeau.role.perform_action(game, ActionType.ADD_VOTES, target=bob)
+        assert result2["success"]
+        assert alice.votes_against == 0
+        assert bob.votes_against == 2
 
     def test_power_reset_on_night_start(self):
         """Le pouvoir se réinitialise au début de chaque nuit."""
@@ -70,6 +77,7 @@ class TestCorbeau:
 
         corbeau.role.on_night_start(game)
         assert not corbeau.role.has_used_power_tonight
+        assert corbeau.role.current_target_id is None
         assert corbeau.role.can_perform_action(ActionType.ADD_VOTES)
 
     def test_invalid_target_dead(self):

@@ -271,7 +271,7 @@ class VoteManager:
             if voters:
                 extras.append(", ".join(voters))
             if bonus:
-                extras.append(f"bonus: +{bonus}")
+                extras.append(f"Corbeau (+{bonus})")
             if extras:
                 summary += f"- {name}: {vote_count} vote(s) — {' | '.join(extras)}\n"
             else:
