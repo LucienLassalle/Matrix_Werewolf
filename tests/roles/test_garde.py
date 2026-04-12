@@ -56,5 +56,37 @@ class TestGardeProtectsMayor:
         assert game.players["m1"].is_mayor
 
 
+class TestGardeDaySelection:
+    """Le garde peut préparer sa protection en journée."""
+
+    def test_day_selection_can_be_changed_before_night(self):
+        game = make_game(
+            ("Garde", "g1", RoleType.GARDE),
+            ("Alice", "a1", RoleType.VILLAGEOIS),
+            ("Bob", "b1", RoleType.VILLAGEOIS),
+            ("Loup", "w1", RoleType.LOUP_GAROU),
+            ("Eve", "e1", RoleType.VILLAGEOIS),
+        )
+        garde = game.players["g1"].role
+        alice = game.players["a1"]
+        bob = game.players["b1"]
+
+        game.phase = GamePhase.DAY
+        r1 = garde.perform_action(game, ActionType.PROTECT, alice)
+        r2 = garde.perform_action(game, ActionType.PROTECT, bob)
+        assert r1["success"]
+        assert r2["success"]
+        assert not alice.is_protected
+        assert not bob.is_protected
+
+        game.phase = GamePhase.NIGHT
+        garde.on_night_start(game)
+
+        assert not alice.is_protected
+        assert bob.is_protected
+        assert garde.last_protected is bob
+        assert garde.has_used_power_tonight
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

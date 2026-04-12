@@ -110,3 +110,41 @@ class TestCorbeau:
     def test_can_act_at_night(self):
         role = RoleFactory.create_role(RoleType.CORBEAU)
         assert role.can_act_at_night()
+
+    def test_effect_removed_on_death_when_option_disabled(self, monkeypatch):
+        monkeypatch.setenv("CORBEAU_EFFECT_ACTIVE_AFTER_DEATH", "false")
+        game = make_game(
+            ("Corbeau", "c1", RoleType.CORBEAU),
+            ("Alice", "a1", RoleType.VILLAGEOIS),
+            ("Loup", "w1", RoleType.LOUP_GAROU),
+            ("Bob", "b1", RoleType.VILLAGEOIS),
+            ("Eve", "e1", RoleType.VILLAGEOIS),
+        )
+        corbeau = game.players["c1"]
+        target = game.players["a1"]
+
+        result = corbeau.role.perform_action(game, ActionType.ADD_VOTES, target=target)
+        assert result["success"]
+        assert target.votes_against == 2
+
+        game.kill_player(corbeau, killed_during_day=True)
+        assert target.votes_against == 0
+
+    def test_effect_kept_on_death_when_option_enabled(self, monkeypatch):
+        monkeypatch.setenv("CORBEAU_EFFECT_ACTIVE_AFTER_DEATH", "true")
+        game = make_game(
+            ("Corbeau", "c1", RoleType.CORBEAU),
+            ("Alice", "a1", RoleType.VILLAGEOIS),
+            ("Loup", "w1", RoleType.LOUP_GAROU),
+            ("Bob", "b1", RoleType.VILLAGEOIS),
+            ("Eve", "e1", RoleType.VILLAGEOIS),
+        )
+        corbeau = game.players["c1"]
+        target = game.players["a1"]
+
+        result = corbeau.role.perform_action(game, ActionType.ADD_VOTES, target=target)
+        assert result["success"]
+        assert target.votes_against == 2
+
+        game.kill_player(corbeau, killed_during_day=True)
+        assert target.votes_against == 2

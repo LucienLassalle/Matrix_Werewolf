@@ -1,5 +1,6 @@
 """Rôle Corbeau."""
 
+import os
 from models.role import Role
 from models.enums import RoleType, Team, ActionType
 from typing import TYPE_CHECKING, Optional
@@ -57,6 +58,22 @@ class Corbeau(Role):
             }
         
         return {"success": False, "message": "Action non disponible"}
+
+    def on_player_death(self, game: 'GameManager', dead_player, **kwargs):
+        """Retire l'effet du Corbeau mort si l'option est désactivée."""
+        if dead_player != self.player:
+            return
+
+        keep_after_death = os.getenv('CORBEAU_EFFECT_ACTIVE_AFTER_DEATH', 'true').strip().lower() == 'true'
+        if keep_after_death:
+            return
+
+        if self.current_target_id:
+            target = game.players.get(self.current_target_id)
+            if target:
+                target.votes_against = max(0, target.votes_against - 2)
+        self.current_target_id = None
+        self.has_used_power_tonight = False
     
     def on_night_start(self, game: 'GameManager'):
         self.has_used_power_tonight = False
