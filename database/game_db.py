@@ -57,6 +57,27 @@ class GameDatabase(GameDatabaseStatsMixin, GameDatabaseRegistrationsMixin, GameD
                 player_data TEXT
             )
         """)
+
+        # Table pour stocker les messages du salon village et les résumés
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS village_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id TEXT NOT NULL,
+                message TEXT NOT NULL,
+                sender TEXT NOT NULL,
+                timestamp TEXT NOT NULL
+            )
+        """)
+
+        # Table pour stocker les résumés générés par l'IA
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS village_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id TEXT NOT NULL,
+                summary_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
         
         # Table pour les votes
         cursor.execute("""

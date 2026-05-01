@@ -31,6 +31,38 @@ async def main():
     # Sans cela, modifier le .env puis redémarrer le container ne prend
     # pas effet car Docker conserve les anciennes valeurs en mémoire.
     load_dotenv(override=True)
+
+    # Variables d'environnement pour Ollama
+    ollama_host = os.getenv('OLLAMA_HOST')
+    ollama_model = os.getenv('OLLAMA_MODEL')
+    ollama_enabled = bool(ollama_host and ollama_model)
+
+    # Vérification de la connexion Ollama si activé
+    ollama_available = False
+    if ollama_enabled:
+        import aiohttp
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{ollama_host}/api/tags") as resp:
+                    if resp.status == 200:
+                        tags = await resp.json()
+                        models = [m['name'] for m in tags.get('models', [])]
+                        if ollama_model not in models:
+                            # Pull le modèle si absent
+                            logger.info(f"Modèle Ollama '{ollama_model}' absent, tentative de pull...")
+                            async with session.post(f"{ollama_host}/api/pull", json={"name": ollama_model}) as pull_resp:
+                                if pull_resp.status == 200:
+                                    logger.info(f"Modèle '{ollama_model}' téléchargé avec succès.")
+                                    ollama_available = True
+                                else:
+                                    logger.error(f"Échec du téléchargement du modèle Ollama: {pull_resp.status}")
+                        else:
+                            ollama_available = True
+                    else:
+                        logger.error(f"Ollama n'a pas répondu correctement: {resp.status}")
+        except Exception as e:
+            logger.error(f"Erreur de connexion à Ollama: {e}")
+            ollama_available = False
     
     # Récupérer la configuration
     homeserver = os.getenv('MATRIX_HOMESERVER')

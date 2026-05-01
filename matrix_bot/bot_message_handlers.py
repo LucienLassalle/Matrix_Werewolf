@@ -69,14 +69,26 @@ class BotMessageHandlersMixin:
         except Exception as e:
             logger.error("Erreur lors de la transmission à la Petite Fille: %s", e)
 
-    async def _handle_village_message(self: 'WerewolfBot', message: str, sender: str):
-        """Gère un message envoyé dans le salon du village."""
+    async def _handle_village_message(self: 'WerewolfBot', message: str, sender: str, room_id: str = None):
+        """Gère un message envoyé dans le salon du village et le stocke en BDD."""
         if self.game_manager.phase not in (GamePhase.DAY, GamePhase.VOTE):
             return
 
         player = self.game_manager.get_player(sender)
         if not player or not player.is_alive:
             return
+
+        # Stocker le message dans la BDD
+        try:
+            db = self.game_manager.db
+            from datetime import datetime
+            db.conn.execute(
+                "INSERT INTO village_messages (room_id, message, sender, timestamp) VALUES (?, ?, ?, ?)",
+                (room_id or getattr(self.room_manager, 'village_room', None), message, sender, datetime.now().isoformat())
+            )
+            db.conn.commit()
+        except Exception as e:
+            logger.error(f"Erreur lors de l'enregistrement du message village: {e}")
 
         if player.role and player.role.role_type == RoleType.LOUP_BAVARD:
             if player.role.check_message_for_word(message):

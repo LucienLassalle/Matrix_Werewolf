@@ -1,3 +1,48 @@
+---
+
+## Résumé IA des débats (Ollama)
+
+Le bot peut générer un résumé automatique des débats du salon village grâce à une IA locale (Ollama).
+
+### Activation
+
+Dans le fichier `.env`, ajoutez :
+
+```
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=mistral
+```
+
+Le résumé est disponible via la commande : `!résumé` (ou `!resume`).
+
+### Fonctionnement
+
+- Tous les messages du salon village sont stockés.
+- Quand un joueur tape `!résumé`, le bot envoie les messages à Ollama et reçoit un JSON structuré :
+
+```json
+{
+   "accusations": [
+      {"accuser": "pseudo1", "accused": "pseudo2", "quote": "..."}
+   ],
+   "citations": [
+      {"author": "pseudo3", "text": "..."}
+   ],
+   "synthese": "Résumé global en français."
+}
+```
+
+- Le résumé est stocké, les messages sont purgés.
+- Si la commande est relancée en moins de 5 minutes, le bot indique que le résumé a déjà été généré.
+- Si OLLAMA_HOST ou OLLAMA_MODEL ne sont pas définis, la commande est désactivée.
+
+### Sécurité
+
+Le prompt impose un format JSON strict pour limiter les risques d'injection.
+
+### Tests
+
+Des tests unitaires complets sont disponibles dans `tests/test_resume_command.py`.
 # Werewolf Matrix
 
 Bot Matrix pour jouer au **Loup-Garou** en temps réel sur un serveur [Matrix](https://matrix.org/).  
