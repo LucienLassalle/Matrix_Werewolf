@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 import math
 import random
 import uuid
+import os
 from datetime import datetime
 import logging
 from collections import Counter
@@ -433,6 +434,12 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin, GamePersistenceMixin):
 
         evil_count = self._min_wolf_count(n)
 
+        # Lire les probabilités depuis l'environnement (ou valeurs par défaut)
+        prob_loup_voyant = float(os.getenv("LOUP_VOYANT_PROB", 0.10))
+        prob_loup_blanc = float(os.getenv("LOUP_BLANC_PROB", 0.03))
+        prob_loup_noir = float(os.getenv("LOUP_NOIR_PROB", 0.01))
+        prob_loup_bavard = float(os.getenv("LOUP_BAVARD_PROB", 0.02))
+
         neutral_pool = self._role_types_by(
             lambda r: r.team == Team.NEUTRE
         )
@@ -449,15 +456,17 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin, GamePersistenceMixin):
 
         # ── Attribution des rôles méchants ──
         evil_roles: list = []
-        for _ in range(evil_count):
+        for i in range(evil_count):
             roll = random.random()
-            if roll < 0.01 and RoleType.LOUP_NOIR not in self.disabled_roles and not any(r.role_type == RoleType.LOUP_NOIR for r in evil_roles):
+            # Loup-Blanc seulement si au moins 3 loups
+            can_have_loup_blanc = evil_count >= 3 and not any(r.role_type == RoleType.LOUP_BLANC for r in evil_roles) and RoleType.LOUP_BLANC not in self.disabled_roles
+            if roll < prob_loup_noir and RoleType.LOUP_NOIR not in self.disabled_roles and not any(r.role_type == RoleType.LOUP_NOIR for r in evil_roles):
                 evil_roles.append(RoleFactory.create_role(RoleType.LOUP_NOIR))
-            elif roll < 0.03 and RoleType.LOUP_BLANC not in self.disabled_roles and not any(r.role_type == RoleType.LOUP_BLANC for r in evil_roles):
+            elif roll < prob_loup_noir + prob_loup_blanc and can_have_loup_blanc:
                 evil_roles.append(RoleFactory.create_role(RoleType.LOUP_BLANC))
-            elif roll < 0.05 and RoleType.LOUP_BAVARD not in self.disabled_roles and not any(r.role_type == RoleType.LOUP_BAVARD for r in evil_roles):
+            elif roll < prob_loup_noir + prob_loup_blanc + prob_loup_bavard and RoleType.LOUP_BAVARD not in self.disabled_roles and not any(r.role_type == RoleType.LOUP_BAVARD for r in evil_roles):
                 evil_roles.append(RoleFactory.create_role(RoleType.LOUP_BAVARD))
-            elif roll < 0.10 and RoleType.LOUP_VOYANT not in self.disabled_roles and not any(r.role_type == RoleType.LOUP_VOYANT for r in evil_roles):
+            elif roll < prob_loup_noir + prob_loup_blanc + prob_loup_bavard + prob_loup_voyant and RoleType.LOUP_VOYANT not in self.disabled_roles and not any(r.role_type == RoleType.LOUP_VOYANT for r in evil_roles):
                 evil_roles.append(RoleFactory.create_role(RoleType.LOUP_VOYANT))
             else:
                 evil_roles.append(RoleFactory.create_role(RoleType.LOUP_GAROU))
