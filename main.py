@@ -58,6 +58,7 @@ async def main():
                                     logger.error(f"Échec du téléchargement du modèle Ollama: {pull_resp.status}")
                         else:
                             ollama_available = True
+                            logger.info(f"Modèle Ollama '{ollama_model}' disponible.")
                     else:
                         logger.error(f"Ollama n'a pas répondu correctement: {resp.status}")
         except Exception as e:
@@ -134,7 +135,8 @@ async def main():
         test_user2_password=test_user2_password,
         test_user2_token=test_user2_token,
         runtests=runtests,
-        disabled_roles=disabled_roles
+        disabled_roles=disabled_roles,
+        ollama_available=ollama_available
     )
     
     try:

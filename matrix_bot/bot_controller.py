@@ -63,7 +63,8 @@ class WerewolfBot(
         test_user2_password: str = None,
         test_user2_token: str = None,
         runtests: bool = False,
-        disabled_roles: set = None
+        disabled_roles: set = None,
+        ollama_available: bool = False
     ):
         # Configuration
         self.homeserver = homeserver
@@ -98,6 +99,9 @@ class WerewolfBot(
         
         # Le scheduler lit lui-même le .env pour ses horaires
         self.scheduler = GameScheduler()
+
+        # Disponibilité d'Ollama (passée par main.py)
+        self.ollama_available = ollama_available
         self.message_handler: Optional[MessageHandler] = None
         self.notification_manager: Optional[NotificationManager] = None
         self.message_distorter = MessageDistorter()

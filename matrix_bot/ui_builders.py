@@ -238,6 +238,8 @@ class UIBuildersMixin:
         message += f"• `{p}leaderboard` / `{p}top` — Voir le classement\n"
         message += f"• `{p}stats` — Voir ses propres statistiques\n"
         message += f"• `{p}roles` — Voir tous les rôles disponibles (lobby / MP)\n"
+        if getattr(self, 'ollama_available', False):
+            message += f"• `{p}résumé` — Demander un résumé des échanges du salon village (à utiliser dans le salon village)\n"
         message += "\n"
 
         # Commandes de vote (village)
