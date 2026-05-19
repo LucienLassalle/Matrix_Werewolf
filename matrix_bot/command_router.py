@@ -119,7 +119,10 @@ class CommandRouterMixin:
                     prompt = ""
                     if previous_json:
                         prompt += f"--- Ancien résumé ---\n{previous_json}\n\n"
-                    prompt += f"--- Nouveaux messages ---\n{json.dumps(chunk, ensure_ascii=False)}\n"
+                    messages_text = "\n".join(
+                        f"{m['sender']}: {m['message']}" for m in chunk
+                    )
+                    prompt += f"--- Nouveaux messages ---\n{messages_text}\n"
 
                     response = await session.post(
                         f"{ollama_host}/api/generate",
@@ -135,7 +138,7 @@ class CommandRouterMixin:
                                 "num_ctx": context_length,
                             },
                         },
-                        timeout=90,
+                        timeout=180,
                     )
                     if response.status != 200:
                         try:

@@ -1,13 +1,12 @@
 """Helpers pour l'intégration Ollama : capacités modèle, découpe messages, fusion, formatage."""
 
-import json
 import logging
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONTEXT_LENGTH = 2048
 # Fenêtre maximale pour éviter les OOM sur serveurs contraints (2vCPU / 4Go RAM)
-MAX_CONTEXT_CAP = 8192
+MAX_CONTEXT_CAP = 4096
 
 
 def estimate_tokens(text: str) -> int:
@@ -73,7 +72,7 @@ def chunk_messages(messages: list, max_tokens: int) -> list:
     current_tokens = 0
 
     for msg in messages:
-        msg_tokens = estimate_tokens(json.dumps(msg, ensure_ascii=False))
+        msg_tokens = estimate_tokens(f"{msg.get('sender', '')}: {msg.get('message', '')}")
         if current_tokens + msg_tokens > max_tokens and current_chunk:
             chunks.append(current_chunk)
             current_chunk = [msg]
