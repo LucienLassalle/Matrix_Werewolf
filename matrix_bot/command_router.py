@@ -138,7 +138,14 @@ class CommandRouterMixin:
                         timeout=90,
                     )
                     if response.status != 200:
-                        await self.client.send_message(room_id, f"Erreur Ollama: {response.status}")
+                        try:
+                            err_body = await response.text()
+                        except Exception:
+                            err_body = "(impossible de lire la réponse)"
+                        logger.error("Ollama %s: %s", response.status, err_body)
+                        await self.client.send_message(
+                            room_id, f"Erreur Ollama: {response.status} — {err_body[:200]}"
+                        )
                         return
                     data = await response.json()
                     chunk_json = data.get('response', '')

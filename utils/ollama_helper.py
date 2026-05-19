@@ -24,7 +24,7 @@ async def get_model_info(session, ollama_host: str, model_name: str) -> dict:
     try:
         response = await session.post(
             f"{ollama_host}/api/show",
-            json={"name": model_name},
+            json={"model": model_name},
             timeout=10,
         )
         if response.status != 200:
