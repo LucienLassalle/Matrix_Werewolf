@@ -51,6 +51,7 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin, GamePersistenceMixin):
         self.available_roles: List[Role] = []
         self.extra_roles: List[Role] = []  # Cartes supplémentaires pour le Voleur
         self.game_log: List[str] = []
+        self.game_events: List[str] = []
 
         # Base de données pour persistance
         self.db = GameDatabase(db_path)
@@ -94,6 +95,7 @@ class GameManager(PhaseManagerMixin, GameLifecycleMixin, GamePersistenceMixin):
         self.available_roles.clear()
         self.extra_roles.clear()
         self.game_log.clear()
+        self.game_events.clear()
         self.game_id = str(uuid.uuid4())
         self.start_time = None
         self._pending_mayor_succession = None

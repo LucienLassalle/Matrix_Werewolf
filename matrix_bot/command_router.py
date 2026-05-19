@@ -185,7 +185,7 @@ class CommandRouterMixin:
         )
         db.conn.commit()
 
-        await self.client.send_message(room_id, format_summary_message(merged))
+        await self.client.send_message(room_id, format_summary_message(merged), formatted=True)
     """Mixin gérant l'inscription et le routage des commandes."""
 
     def _track_journal_event(self: 'WerewolfBot', command: str, args: list,
@@ -703,6 +703,10 @@ class CommandRouterMixin:
             if (result['success'] and command == 'vote-maire'
                 and self.game_manager.can_vote_mayor()):
                 await self._check_mayor_election_progress()
+
+            # Persister les votes immédiatement pour survivre à un redémarrage mid-vote
+            if result['success'] and command in ('vote', 'vote-maire'):
+                self.game_manager.save_state()
 
             # Après !cupidon réussi, créer immédiatement le salon du couple
             # et notifier les amoureux (ils se "réveillent" pendant la nuit)

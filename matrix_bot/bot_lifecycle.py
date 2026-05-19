@@ -194,6 +194,8 @@ class BotLifecycleMixin:
                 logger.error("Échec de la restauration du GameManager")
                 return False
 
+            self._game_events = self.game_manager.game_events
+
             saved_rooms = self.game_manager.db.load_room_state()
             if saved_rooms:
                 self.room_manager.village_room = saved_rooms.get('village')
@@ -430,7 +432,8 @@ class BotLifecycleMixin:
             )
             return False
 
-        self._game_events = []
+        self.game_manager.game_events = []
+        self._game_events = self.game_manager.game_events
 
         await self.client.send_message(
             self.lobby_room_id,

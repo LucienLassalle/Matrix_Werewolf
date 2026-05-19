@@ -76,6 +76,7 @@ class GamePersistenceMixin:
                         if self._pending_mayor_succession else None
                     ),
                     'game_log': self.game_log,
+                    'game_events': self.game_events,
                     'extra_roles': [
                         r.role_type.value for r in self.extra_roles
                     ],
@@ -106,6 +107,7 @@ class GamePersistenceMixin:
                 'cupidon_wins_with_couple', self.cupidon_wins_with_couple
             )
             self.game_log = additional.get('game_log', [])
+            self.game_events = additional.get('game_events', [])
 
             self.players.clear()
             self._player_order.clear()
